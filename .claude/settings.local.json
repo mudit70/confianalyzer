@@ -1,0 +1,21 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/mudittyagi/projects/testrepos"
+    ],
+    "allow": [
+      "Bash",
+      "Gh",
+      "Cd",
+      "Curl",
+      "WebFetch(domain:localhost)",
+      "WebSearch",
+      "WebFetch(domain:api.github.com)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
