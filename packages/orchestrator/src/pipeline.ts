@@ -120,6 +120,7 @@ export async function buildResultFromIr(
   // Collect API callers and endpoints for stitching
   const apiCallers: ApiCaller[] = [];
   const apiEndpointsList: ApiEndpoint[] = [];
+  const endpointRouteSet = new Set<string>(); // Dedup: "METHOD::path::funcId"
 
   for (const [repoName, doc] of irDocuments) {
     // Repository node
@@ -251,6 +252,46 @@ export async function buildResultFromIr(
               });
             }
           }
+        }
+      }
+
+      // Call-level enrichments: detect endpoints from route enrichments on calls
+      // This handles patterns like fastify.get('/path', async (req, res) => { ... })
+      // where the handler is an anonymous arrow function inside an enclosing route-registering function
+      for (const call of file.calls) {
+        if (!call.enrichments) continue;
+        for (const enrichment of call.enrichments) {
+          if (!enrichment.route) continue;
+          // Find the enclosing function to attach the endpoint to
+          const enclosingFuncName = call.enclosingFunction;
+          if (!enclosingFuncName) continue;
+          const funcKey = makeFunctionId(repoName, file.relativePath, enclosingFuncName);
+          const funcId = functionIdMap.get(funcKey);
+          if (!funcId) continue;
+          // Skip if this exact route was already added via function-level endpointInfo/enrichments
+          const routeKey = `${enrichment.route.method}::${enrichment.route.path}::${funcId}`;
+          if (endpointRouteSet.has(routeKey)) continue;
+          endpointRouteSet.add(routeKey);
+
+          const epId = crypto.randomUUID();
+          apiEndpoints.push({
+            id: epId,
+            method: enrichment.route.method,
+            path: enrichment.route.path,
+            fullRoute: enrichment.route.path,
+          });
+          relationships.push({
+            type: "EXPOSES",
+            fromId: funcId,
+            toId: epId,
+            properties: {},
+          });
+          apiEndpointsList.push({
+            functionId: funcId,
+            httpMethod: enrichment.route.method,
+            routePath: enrichment.route.path,
+            repoName,
+          });
         }
       }
 

@@ -1,6 +1,7 @@
 import ts from "typescript";
 import type { CallIR, FunctionIR, Enrichment, EndpointInfo } from "../types.js";
 import { createExpressPlugin } from "./express.js";
+import { createFastifyPlugin } from "./fastify.js";
 import { createReactPlugin } from "./react.js";
 import { createAxiosPlugin } from "./axios.js";
 
@@ -29,5 +30,5 @@ export interface FrameworkPlugin {
 }
 
 export function createDefaultPlugins(): FrameworkPlugin[] {
-  return [createExpressPlugin(), createReactPlugin(), createAxiosPlugin()];
+  return [createExpressPlugin(), createFastifyPlugin(), createReactPlugin(), createAxiosPlugin()];
 }
