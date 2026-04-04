@@ -43,12 +43,14 @@ export default function QueryBar() {
     });
   }
 
-  function buildQueryWithFilters(rawQuery: string): string {
-    const hints = FILTER_CHIPS.filter((c) => activeFilters.has(c.key)).map(
-      (c) => c.hint,
-    );
-    if (hints.length === 0) return rawQuery;
-    return `${rawQuery} (${hints.join(", ")})`;
+  function buildFiltersObject(): { frontendOnly?: boolean; backendOnly?: boolean; excludeTests?: boolean; dbLayerOnly?: boolean } | undefined {
+    if (activeFilters.size === 0) return undefined;
+    return {
+      frontendOnly: activeFilters.has("frontend") || undefined,
+      backendOnly: activeFilters.has("backend") || undefined,
+      excludeTests: activeFilters.has("excludeTests") || undefined,
+      dbLayerOnly: activeFilters.has("dbLayer") || undefined,
+    };
   }
 
   // Advance thinking steps while loading
@@ -74,8 +76,8 @@ export default function QueryBar() {
     setError(null);
     setResult(null);
     try {
-      const enriched = buildQueryWithFilters(query.trim());
-      const res = await apiClient.naturalLanguageQuery(enriched);
+      const filters = buildFiltersObject();
+      const res = await apiClient.naturalLanguageQuery(query.trim(), filters);
       setResult(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Query failed");

@@ -286,11 +286,16 @@ export default function GraphExplorer() {
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
       setSelectedNode(node);
-      if (node.type === "function" && !neighborhoodMode) {
-        loadNeighbors(node.id);
+      if (!neighborhoodMode) {
+        if (node.type === "function") {
+          loadNeighbors(node.id);
+        } else if (node.type === "file") {
+          // For file nodes, load neighborhood to show import graph
+          loadNeighborhood(node.id, neighborhoodDepth);
+        }
       }
     },
-    [loadNeighbors, neighborhoodMode],
+    [loadNeighbors, loadNeighborhood, neighborhoodMode, neighborhoodDepth],
   );
 
   const handleInsightClick = useCallback(
@@ -513,7 +518,9 @@ export default function GraphExplorer() {
                           ? 16
                           : selectedNode?.id === p.node.id
                             ? 14
-                            : 10
+                            : p.node.type === "file"
+                              ? 12
+                              : 10
                       }
                       fill={getNodeFill(p.node)}
                       stroke={
@@ -525,12 +532,15 @@ export default function GraphExplorer() {
                       }
                       strokeWidth={isCenter ? 3 : 2}
                     />
+                    <title>{p.node.label}</title>
                     <text
                       y={-16}
                       textAnchor="middle"
                       className="graph-node__label"
                     >
-                      {p.node.label}
+                      {p.node.type === "file"
+                        ? p.node.label.split("/").pop() ?? p.node.label
+                        : p.node.label}
                     </text>
                   </g>
                 );

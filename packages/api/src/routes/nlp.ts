@@ -9,9 +9,22 @@ const router = Router();
  */
 router.post("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { question } = req.body;
+    const { question, filters } = req.body;
     if (!question || typeof question !== "string") {
       throw new ApiError(400, "A 'question' string is required in the request body");
+    }
+
+    // Append structured filter hints to the question
+    let enrichedQuestion = question;
+    if (filters && typeof filters === "object") {
+      const hints: string[] = [];
+      if (filters.frontendOnly) hints.push("[Filter: only in frontend repositories]");
+      if (filters.backendOnly) hints.push("[Filter: only in backend repositories]");
+      if (filters.excludeTests) hints.push("[Filter: exclude files whose path contains 'test', 'spec', '__tests__', or 'mock']");
+      if (filters.dbLayerOnly) hints.push("[Filter: only functions with DB_CALL category]");
+      if (hints.length > 0) {
+        enrichedQuestion = `${question}\n${hints.join("\n")}`;
+      }
     }
 
     // Dynamic import of the NLP translator
@@ -32,7 +45,7 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       );
     }
 
-    const translation = await translateToCypher(question);
+    const translation = await translateToCypher(enrichedQuestion);
 
     if (!translation.validation.isValid) {
       throw new ApiError(400, `Invalid Cypher generated: ${translation.validation.errors.join(", ")}`);

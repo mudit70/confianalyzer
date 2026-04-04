@@ -135,10 +135,13 @@ export const apiClient = {
   },
 
   // NLP query
-  naturalLanguageQuery(question: string): Promise<NlpQueryResult> {
+  naturalLanguageQuery(
+    question: string,
+    filters?: { frontendOnly?: boolean; backendOnly?: boolean; excludeTests?: boolean; dbLayerOnly?: boolean },
+  ): Promise<NlpQueryResult> {
     return request("/query/nlp", {
       method: "POST",
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, filters }),
     });
   },
 
