@@ -33,7 +33,7 @@ function cypherEscape(value: string): string {
 function projectStatements(node: ProjectNode): CypherStatement[] {
   return [
     {
-      query: "MERGE (p:Project {id: $id}) ON CREATE SET p.name = $name, p.createdAt = $createdAt",
+      query: "MERGE (p:Project {name: $name}) ON CREATE SET p.id = $id, p.createdAt = $createdAt ON MATCH SET p.id = $id",
       params: { id: node.id, name: node.name, createdAt: node.createdAt },
     },
   ];

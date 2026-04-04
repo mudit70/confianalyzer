@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import QueryBar from "./QueryBar";
+import { useProjectName } from "../hooks/useProjectName";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: "grid" },
@@ -13,6 +14,7 @@ const NAV_ITEMS = [
 ] as const;
 
 export default function Layout() {
+  const projectName = useProjectName();
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -36,7 +38,7 @@ export default function Layout() {
       </aside>
       <div className="main-area">
         <header className="top-bar">
-          <span className="top-bar__project">Project: default</span>
+          <span className="top-bar__project">Project: {projectName}</span>
           <QueryBar />
         </header>
         <main className="content">

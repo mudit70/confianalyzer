@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { apiClient } from "../api/client";
 import type { Repository, FileNode as FileNodeType, FunctionNode } from "../types/graph";
+import { useProjectName } from "../hooks/useProjectName";
 
 interface TreeDir {
   name: string;
@@ -82,6 +83,7 @@ function TreeNode({
 }
 
 export default function FileTree() {
+  const projectName = useProjectName();
   const [repos, setRepos] = useState<Repository[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
   const [files, setFiles] = useState<FileNodeType[]>([]);
@@ -92,11 +94,11 @@ export default function FileTree() {
 
   useEffect(() => {
     apiClient
-      .getRepositories("default")
+      .getRepositories(projectName)
       .then(setRepos)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load repos"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [projectName]);
 
   useEffect(() => {
     if (!selectedRepo) return;

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 import type { GraphSummaryResponse, FunctionCategory } from "../types/graph";
 import { CATEGORY_COLORS } from "../types/graph";
+import { useProjectName } from "../hooks/useProjectName";
 
 interface SummaryCard {
   key: string;
@@ -13,6 +14,7 @@ interface SummaryCard {
 }
 
 export default function GuidedLanding() {
+  const projectName = useProjectName();
   const [summary, setSummary] = useState<GraphSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,13 +22,13 @@ export default function GuidedLanding() {
 
   useEffect(() => {
     apiClient
-      .getGraphSummary("default")
+      .getGraphSummary(projectName)
       .then(setSummary)
       .catch((err) =>
         setError(err instanceof Error ? err.message : "Failed to load"),
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [projectName]);
 
   const cards = useMemo<SummaryCard[]>(() => {
     if (!summary) return [];

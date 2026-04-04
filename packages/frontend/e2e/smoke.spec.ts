@@ -69,6 +69,6 @@ test.describe("Smoke tests", () => {
 
   test("Top bar shows project name", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator(".top-bar__project")).toContainText("Project: default");
+    await expect(page.locator(".top-bar__project")).toContainText("Project:");
   });
 });
