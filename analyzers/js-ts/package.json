@@ -1,0 +1,22 @@
+{
+  "name": "@confianalyzer/js-ts-analyzer",
+  "version": "0.1.0",
+  "description": "TypeScript/JavaScript analyzer for ConfiAnalyzer",
+  "type": "module",
+  "main": "dist/analyzer.js",
+  "bin": {
+    "confianalyzer-analyze-ts": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "typescript": "^5.4.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0",
+    "@types/node": "^20.0.0"
+  }
+}

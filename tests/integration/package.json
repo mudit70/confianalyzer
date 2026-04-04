@@ -1,0 +1,18 @@
+{
+  "name": "confianalyzer-integration-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "neo4j-driver": "^5.27.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

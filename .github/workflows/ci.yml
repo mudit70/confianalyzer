@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typescript:
+    name: TypeScript (build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  python:
+    name: Python Analyzer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - working-directory: analyzers/python
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -e ".[test]" 2>/dev/null || .venv/bin/pip install pytest
+          .venv/bin/pytest -v
+
+  go:
+    name: Go Analyzer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+      - working-directory: analyzers/go
+        run: go test -v ./...
+
+  java:
+    name: Java Analyzer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+      - working-directory: analyzers/java
+        run: mvn test -B
+
+  rust:
+    name: Rust Analyzer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: analyzers/rust
+      - working-directory: analyzers/rust
+        run: cargo test
+
+  integration:
+    name: Integration Tests
+    needs: [typescript, python]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: npm run build
+      - working-directory: analyzers/python
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -e ".[test]" 2>/dev/null || .venv/bin/pip install pytest
+      - working-directory: tests/integration
+        run: npx vitest run

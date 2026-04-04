@@ -1,0 +1,22 @@
+[package]
+name = "confianalyzer-analyze-rust"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "confianalyzer-analyze-rust"
+path = "src/main.rs"
+
+[dependencies]
+syn = { version = "2", features = ["full", "visit", "extra-traits"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+sha2 = "0.10"
+walkdir = "2"
+proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = "1"
+chrono = "0.4"
+
+[dev-dependencies]
+tempfile = "3"

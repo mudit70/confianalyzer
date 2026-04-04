@@ -37,6 +37,38 @@ The orchestrator matches API callers from one repo/language to API endpoints in 
 5. Cross-repo stitching — match API callers to endpoints across repos/languages
 6. Graph storage — write unified graph to Neo4j
 
+## Local App Execution
+
+### Ports
+- **Frontend:** http://localhost:5176
+- **API Server:** http://localhost:3006
+- **Neo4j Browser:** http://localhost:7475
+- **Neo4j Bolt:** bolt://localhost:7688
+
+### Start the stack
+
+1. Start Neo4j:
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+2. Start the API server:
+```bash
+cd packages/api
+NEO4J_URI=bolt://localhost:7688 NEO4J_USER=neo4j NEO4J_PASSWORD=confianalyzer PORT=3006 node dist/index.js
+```
+
+3. Start the frontend (dev mode):
+```bash
+cd packages/frontend
+npm run dev
+```
+
+### Build before running
+```bash
+npm install && npm run build
+```
+
 ## Way of Working
 
 ### Issue-Driven Development

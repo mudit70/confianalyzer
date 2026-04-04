@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "confianalyzer-python"
+version = "0.1.0"
+description = "Python analyzer for ConfiAnalyzer federated code analysis system"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[project.scripts]
+confianalyzer-python = "confianalyzer_python.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["confianalyzer_python/tests"]
+
+[tool.setuptools.packages.find]
+include = ["confianalyzer_python*"]

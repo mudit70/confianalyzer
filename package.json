@@ -1,0 +1,17 @@
+{
+  "name": "confianalyzer",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "analyzers/js-ts",
+    "tests/integration"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:python": "cd analyzers/python && .venv/bin/pytest -v",
+    "test:all": "npm test && npm run test:python",
+    "clean": "rm -rf packages/*/dist analyzers/js-ts/dist"
+  }
+}
