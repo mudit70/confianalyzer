@@ -189,20 +189,30 @@ export default function IntelligenceSidebar({
             {hotspots.length === 0 ? (
               <p className="text-muted">No data available.</p>
             ) : (
-              hotspots.map((item) => (
-                <button
-                  key={item.id}
-                  className="insight-item"
-                  onClick={() => onInsightClick(item)}
-                >
-                  <span className="insight-item__name">
-                    {item.path ?? item.name}
-                  </span>
-                  <span className="insight-item__count">
-                    {item.count} imports
-                  </span>
-                </button>
-              ))
+              hotspots.map((item) => {
+                const fullPath = item.path ?? item.name;
+                const fileName = fullPath.split("/").pop() ?? fullPath;
+                const dirPath = fullPath.includes("/") ? fullPath.slice(0, fullPath.lastIndexOf("/")) : "";
+                return (
+                  <button
+                    key={item.id}
+                    className="insight-item"
+                    onClick={() => onInsightClick(item)}
+                    title={fullPath}
+                    style={{ flexDirection: "column", alignItems: "flex-start", gap: "2px" }}
+                  >
+                    <span style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%" }}>
+                      <span className="insight-item__name" style={{ fontWeight: 600 }}>{fileName}</span>
+                      <span className="insight-item__count">{item.count} imports</span>
+                    </span>
+                    {dirPath && (
+                      <span style={{ fontSize: "0.72rem", color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
+                        {dirPath}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
             )}
           </div>
         )}
@@ -223,7 +233,10 @@ export default function IntelligenceSidebar({
                 >
                   <span className="insight-item__name">{item.name}</span>
                   {item.category && (
-                    <span className="badge badge--sm">{item.category}</span>
+                    <span className="badge badge--sm" style={{
+                      backgroundColor: CATEGORY_COLORS[item.category as FunctionCategory] ?? "#6b7280",
+                      color: "#fff", fontSize: "0.65rem", padding: "1px 6px", borderRadius: "3px",
+                    }}>{item.category}</span>
                   )}
                   <span className="insight-item__count">
                     {item.count} calls
@@ -253,13 +266,13 @@ export default function IntelligenceSidebar({
                       count: cycle.length,
                     })
                   }
+                  style={{ flexDirection: "column", alignItems: "flex-start", gap: "4px" }}
                 >
-                  <span className="insight-item__name">
-                    Cycle of {cycle.length} functions:{" "}
-                    {cycle.nodeNames.join(" \u2192 ")}
+                  <span style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%" }}>
+                    <span style={{ fontWeight: 600, color: "var(--warning)" }}>Cycle ({cycle.length})</span>
                   </span>
-                  <span className="insight-item__count">
-                    {cycle.length} calls
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", wordBreak: "break-word", whiteSpace: "normal", lineHeight: 1.4 }}>
+                    {cycle.nodeNames.join(" \u2192 ")}
                   </span>
                 </button>
               ))
@@ -275,42 +288,43 @@ export default function IntelligenceSidebar({
             {deadCode.length === 0 ? (
               <p className="text-muted">No unused functions detected.</p>
             ) : (
-              deadCode.map((item) => (
-                <button
-                  key={item.id}
-                  className="insight-item"
-                  onClick={() =>
-                    onInsightClick({
-                      id: item.id,
-                      name: item.name,
-                      category: item.category,
-                      count: 0,
-                    })
-                  }
-                >
-                  <span className="insight-item__name">
-                    <strong>{item.name}</strong>
-                  </span>
-                  {item.category && (
-                    <span
-                      className="badge badge--sm"
-                      style={{
-                        backgroundColor:
-                          CATEGORY_COLORS[item.category as FunctionCategory] ?? "#6b7280",
-                        color: "#fff",
-                      }}
-                    >
-                      {item.category}
+              deadCode.map((item) => {
+                const fileName = item.filePath.split("/").pop() ?? item.filePath;
+                return (
+                  <button
+                    key={item.id}
+                    className="insight-item"
+                    onClick={() =>
+                      onInsightClick({
+                        id: item.id,
+                        name: item.name,
+                        category: item.category,
+                        count: 0,
+                      })
+                    }
+                    title={item.filePath}
+                    style={{ flexDirection: "column", alignItems: "flex-start", gap: "2px" }}
+                  >
+                    <span style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%" }}>
+                      <span className="insight-item__name" style={{ fontWeight: 600 }}>{item.name}</span>
+                      {item.category && (
+                        <span
+                          className="badge badge--sm"
+                          style={{
+                            backgroundColor: CATEGORY_COLORS[item.category as FunctionCategory] ?? "#6b7280",
+                            color: "#fff", fontSize: "0.65rem", padding: "1px 6px", borderRadius: "3px",
+                          }}
+                        >
+                          {item.category}
+                        </span>
+                      )}
                     </span>
-                  )}
-                  <span className="insight-item__path" style={{ opacity: 0.6, fontSize: "0.85em" }}>
-                    {item.filePath}
-                  </span>
-                  <span className="insight-item__repo" style={{ opacity: 0.5, fontSize: "0.8em" }}>
-                    {item.repoName}
-                  </span>
-                </button>
-              ))
+                    <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
+                      {fileName} &middot; {item.repoName}
+                    </span>
+                  </button>
+                );
+              })
             )}
             <p className="text-muted" style={{ fontSize: "0.8em", marginTop: "0.5rem" }}>
               Excludes API endpoints and UI entry points. Dynamic dispatch may hide callers.
