@@ -1,8 +1,9 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { apiClient } from "../api/client";
 import type { FunctionResult, FlowPath, GraphNode, GraphEdge, FunctionCategory, EntryToExitTrace } from "../types/graph";
 import { CATEGORY_COLORS } from "../types/graph";
 import SubgraphSummary from "./SubgraphSummary";
+import { useProjectName } from "../hooks/useProjectName";
 
 const ENTRY_CATEGORIES: { label: string; value: string }[] = [
   { label: "Any function", value: "" },
@@ -30,6 +31,7 @@ const SWIMLANE_COL_GAP = 200;
 const SWIMLANE_ROW_GAP = 56;
 
 export default function FlowTracer() {
+  const projectName = useProjectName();
   const [searchQuery, setSearchQuery] = useState("");
   const [entryCategory, setEntryCategory] = useState("");
   const [searchResults, setSearchResults] = useState<FunctionResult[]>([]);
@@ -43,6 +45,19 @@ export default function FlowTracer() {
   const [showSummary, setShowSummary] = useState(false);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("flow");
   const [categoryFunctions, setCategoryFunctions] = useState<FunctionResult[]>([]);
+  const [suggestions, setSuggestions] = useState<FunctionResult[]>([]);
+
+  // Fetch suggested starting points on mount
+  useEffect(() => {
+    if (projectName === "default") return;
+    Promise.all([
+      apiClient.getCategoryFunctions(projectName, "API_ENDPOINT").catch(() => []),
+      apiClient.getCategoryFunctions(projectName, "UI_INTERACTION").catch(() => []),
+    ]).then(([endpoints, uiFns]) => {
+      const combined = [...endpoints.slice(0, 4), ...uiFns.slice(0, 4)];
+      setSuggestions(combined);
+    });
+  }, [projectName]);
 
   // Convert entry-to-exit trace into FlowPath[] for unified rendering
   const entryToExitFlows = useMemo<FlowPath[]>(() => {
@@ -128,7 +143,7 @@ export default function FlowTracer() {
       setLoading(true);
       setError(null);
       try {
-        const fns = await apiClient.getCategoryFunctions("default", category);
+        const fns = await apiClient.getCategoryFunctions(projectName, category);
         setCategoryFunctions(fns);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load category functions");
@@ -146,7 +161,7 @@ export default function FlowTracer() {
       let results: FunctionResult[];
       if (entryCategory) {
         results = await apiClient.getCategoryFunctions(
-          "default",
+          projectName,
           entryCategory,
         );
         // Filter by search query locally
@@ -282,90 +297,165 @@ export default function FlowTracer() {
     return { positioned, lanes, width, height };
   }
 
+  const currentStep = !selectedFn ? 1 : activeFlows.length === 0 ? 2 : 3;
+  const hasTraced = activeFlows.length > 0;
+
   return (
     <div className="flow-tracer">
       <h2>Flow Tracer</h2>
 
-      {/* Entry point picker */}
-      <div className="flow-tracer__entry-picker">
-        <label>Start from:</label>
-        <select
-          className="search-input"
-          value={entryCategory}
-          onChange={(e) => handleCategoryChange(e.target.value)}
-          style={{ width: "auto", minWidth: 200 }}
-        >
-          {ENTRY_CATEGORIES.map((cat) => (
-            <option key={cat.value} value={cat.value}>
-              {cat.label}
-            </option>
-          ))}
-        </select>
+      {/* Workflow step indicator */}
+      <div style={{
+        display: "flex", gap: "0", marginBottom: "1rem", fontSize: "0.82rem",
+      }}>
+        {[
+          { num: 1, label: "Choose function" },
+          { num: 2, label: "Pick direction & trace" },
+          { num: 3, label: "View flow" },
+        ].map((step, i) => (
+          <div key={step.num} style={{
+            display: "flex", alignItems: "center", gap: "6px",
+            padding: "6px 14px",
+            backgroundColor: currentStep === step.num ? "rgba(59, 130, 246, 0.1)" : currentStep > step.num ? "rgba(34, 197, 94, 0.05)" : "transparent",
+            borderBottom: currentStep === step.num ? "2px solid #3b82f6" : currentStep > step.num ? "2px solid #22c55e" : "2px solid #e2e8f0",
+            color: currentStep === step.num ? "#3b82f6" : currentStep > step.num ? "#22c55e" : "#94a3b8",
+            fontWeight: currentStep === step.num ? 600 : 400,
+          }}>
+            <span style={{
+              width: 20, height: 20, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
+              fontSize: "0.75rem", fontWeight: 700,
+              backgroundColor: currentStep > step.num ? "#22c55e" : currentStep === step.num ? "#3b82f6" : "#e2e8f0",
+              color: currentStep >= step.num ? "#fff" : "#94a3b8",
+            }}>
+              {currentStep > step.num ? "\u2713" : step.num}
+            </span>
+            {step.label}
+            {i < 2 && <span style={{ marginLeft: "8px", color: "#cbd5e1" }}>&rsaquo;</span>}
+          </div>
+        ))}
       </div>
 
-      {/* Category function list */}
-      {entryCategory && categoryFunctions.length > 0 && !selectedFn && !searchQuery && (
-        <div className="search-results">
-          {categoryFunctions.slice(0, 20).map((fn) => (
-            <button
-              key={fn.id}
-              className="search-result-item"
-              onClick={() => {
-                setSelectedFn(fn);
-                setCategoryFunctions([]);
-              }}
+      {/* ─── STEP 1: Choose function ─── */}
+      {!selectedFn && (
+        <>
+          {/* Guided intro when no function selected and no trace */}
+          {!hasTraced && (
+            <div style={{
+              padding: "1rem 1.25rem", marginBottom: "1rem",
+              backgroundColor: "rgba(59, 130, 246, 0.04)", border: "1px solid #e2e8f0",
+              borderRadius: "8px", lineHeight: 1.5,
+            }}>
+              <p style={{ color: "#334155", margin: "0 0 0.5rem 0", fontWeight: 500 }}>
+                Trace call chains through your codebase
+              </p>
+              <p style={{ color: "#64748b", margin: 0, fontSize: "0.85rem" }}>
+                Pick a function, choose a direction (downstream, upstream, or full flow), and see the chain of calls it participates in. Great for understanding how a request flows from UI to database.
+              </p>
+            </div>
+          )}
+
+          {/* Entry point picker */}
+          <div className="flow-tracer__entry-picker">
+            <label>Filter by category:</label>
+            <select
+              className="search-input"
+              value={entryCategory}
+              onChange={(e) => handleCategoryChange(e.target.value)}
+              style={{ width: "auto", minWidth: 200 }}
             >
-              <strong>{fn.name}</strong>
-              <span className="badge">{fn.category}</span>
-              <span className="text-muted">
-                {fn.repoName} - {fn.filePath}
-              </span>
+              {ENTRY_CATEGORIES.map((cat) => (
+                <option key={cat.value} value={cat.value}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Category function list */}
+          {entryCategory && categoryFunctions.length > 0 && !searchQuery && (
+            <div className="search-results">
+              {categoryFunctions.slice(0, 20).map((fn) => (
+                <button key={fn.id} className="search-result-item"
+                  onClick={() => { setSelectedFn(fn); setCategoryFunctions([]); }}>
+                  <strong>{fn.name}</strong>
+                  <span className="badge" style={{
+                    backgroundColor: CATEGORY_COLORS[fn.category as FunctionCategory] ?? "#6b7280",
+                    color: "#fff",
+                  }}>{fn.category}</span>
+                  <span className="text-muted">{fn.filePath}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flow-tracer__controls">
+            <input type="text" className="search-input"
+              placeholder="Search for a function by name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
+            <button className="btn" onClick={handleSearch} disabled={loading}>
+              {loading ? "..." : "Search"}
             </button>
-          ))}
-        </div>
+          </div>
+
+          {searchResults.length > 0 && (
+            <div className="search-results">
+              {searchResults.map((fn) => (
+                <button key={fn.id} className="search-result-item"
+                  onClick={() => { setSelectedFn(fn); setSearchResults([]); }}>
+                  <strong>{fn.name}</strong>
+                  <span className="badge" style={{
+                    backgroundColor: CATEGORY_COLORS[fn.category as FunctionCategory] ?? "#6b7280",
+                    color: "#fff",
+                  }}>{fn.category}</span>
+                  <span className="text-muted">{fn.filePath}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Suggested starting points */}
+          {!entryCategory && searchResults.length === 0 && suggestions.length > 0 && (
+            <div style={{ marginTop: "1rem" }}>
+              <p style={{ color: "#64748b", fontSize: "0.82rem", marginBottom: "0.5rem", fontWeight: 500 }}>
+                Suggested starting points:
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {suggestions.map((fn) => (
+                  <button key={fn.id}
+                    onClick={() => { setSelectedFn(fn); }}
+                    style={{
+                      padding: "6px 12px", borderRadius: "6px", cursor: "pointer",
+                      border: "1px solid #e2e8f0", background: "#f8fafc",
+                      fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "6px",
+                    }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                      backgroundColor: CATEGORY_COLORS[fn.category as FunctionCategory] ?? "#6b7280",
+                    }} />
+                    <span style={{ fontWeight: 500 }}>{fn.name}</span>
+                    <span style={{ color: "#94a3b8", fontSize: "0.75rem" }}>{fn.category}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
-      <div className="flow-tracer__controls">
-        <input
-          type="text"
-          className="search-input"
-          placeholder="Search for a starting function..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-        />
-        <button className="btn" onClick={handleSearch} disabled={loading}>
-          Search
-        </button>
-      </div>
-
-      {searchResults.length > 0 && !selectedFn && (
-        <div className="search-results">
-          {searchResults.map((fn) => (
-            <button
-              key={fn.id}
-              className="search-result-item"
-              onClick={() => {
-                setSelectedFn(fn);
-                setSearchResults([]);
-              }}
-            >
-              <strong>{fn.name}</strong>
-              <span className="badge">{fn.category}</span>
-              <span className="text-muted">
-                {fn.repoName} - {fn.filePath}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
+      {/* ─── STEP 2: Direction & Trace ─── */}
       {selectedFn && (
         <div className="flow-tracer__selected">
           <span>
             Starting from: <strong>{selectedFn.name}</strong>
+            <span className="badge" style={{
+              marginLeft: "8px",
+              backgroundColor: CATEGORY_COLORS[selectedFn.category as FunctionCategory] ?? "#6b7280",
+              color: "#fff",
+            }}>{selectedFn.category}</span>
           </span>
-          <button className="btn btn--sm" onClick={() => setSelectedFn(null)}>
+          <button className="btn btn--sm" onClick={() => { setSelectedFn(null); setFlows([]); setEntryToExitTrace(null); }}>
             Change
           </button>
         </div>
@@ -374,33 +464,18 @@ export default function FlowTracer() {
       {selectedFn && (
         <div className="flow-tracer__direction">
           <label>
-            <input
-              type="radio"
-              name="direction"
-              value="callees"
-              checked={direction === "callees"}
-              onChange={() => setDirection("callees")}
-            />
+            <input type="radio" name="direction" value="callees"
+              checked={direction === "callees"} onChange={() => setDirection("callees")} />
             Trace callees (what does this call?)
           </label>
           <label>
-            <input
-              type="radio"
-              name="direction"
-              value="callers"
-              checked={direction === "callers"}
-              onChange={() => setDirection("callers")}
-            />
+            <input type="radio" name="direction" value="callers"
+              checked={direction === "callers"} onChange={() => setDirection("callers")} />
             Trace callers (who calls this?)
           </label>
           <label>
-            <input
-              type="radio"
-              name="direction"
-              value="entry-to-exit"
-              checked={direction === "entry-to-exit"}
-              onChange={() => setDirection("entry-to-exit")}
-            />
+            <input type="radio" name="direction" value="entry-to-exit"
+              checked={direction === "entry-to-exit"} onChange={() => setDirection("entry-to-exit")} />
             Entry to Exit (full flow)
           </label>
           <button className="btn" onClick={handleTrace} disabled={loading}>

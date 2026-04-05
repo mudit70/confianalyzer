@@ -78,7 +78,7 @@ test.describe("Component interaction tests", () => {
     await page.goto("/flow");
     const input = page.locator(".flow-tracer__controls .search-input");
     await expect(input).toBeVisible();
-    await expect(input).toHaveAttribute("placeholder", "Search for a starting function...");
+    await expect(input).toHaveAttribute("placeholder", /search for a function/i);
   });
 
   test("Endpoint list shows method filter buttons when loaded", async ({ page }) => {
