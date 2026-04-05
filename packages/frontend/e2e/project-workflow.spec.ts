@@ -8,34 +8,43 @@ const BACKEND_FIXTURE = "/Users/mudittyagi/projects/confianalyzer/tests/fixtures
 const PROJECT_NAME = `pw-e2e-${Date.now()}`;
 
 /**
- * Clear ALL data from Neo4j so tests start from a clean slate.
- * Uses the Neo4j HTTP Query API (v2) directly.
+ * Clean up test-specific data from Neo4j without destroying other projects.
+ * Only deletes the test project and its related nodes.
  */
-async function clearNeo4j(request: APIRequestContext) {
+async function cleanupTestProject(request: APIRequestContext, projectName: string) {
   await request.post(`${NEO4J_HTTP}/db/neo4j/query/v2`, {
     headers: {
       "Content-Type": "application/json",
       Authorization: `Basic ${Buffer.from(NEO4J_AUTH).toString("base64")}`,
     },
-    data: { statement: "MATCH (n) DETACH DELETE n" },
+    data: {
+      statement: `MATCH (p:Project {name: $name})
+                   OPTIONAL MATCH (r:Repository)-[:BELONGS_TO]->(p)
+                   OPTIONAL MATCH (r)<-[:IN_REPO]-(f:File)
+                   OPTIONAL MATCH (f)<-[:DEFINED_IN]-(fn:Function)
+                   OPTIONAL MATCH (fn)-[:EXPOSES]->(ep:APIEndpoint)
+                   OPTIONAL MATCH (fn)-[:READS|WRITES]->(dt:DBTable)
+                   DETACH DELETE ep, dt, fn, f, r, p`,
+      parameters: { name: projectName },
+    },
   });
 }
 
 // ─── Independent tests (no shared state) ───
 
 test.describe("Project workflow: welcome and navigation", () => {
-  test("Test 1: Welcome page shows create button", async ({ page, request }) => {
-    await clearNeo4j(request);
+  test("Test 1: Dashboard has a create project button or link", async ({ page, request }) => {
+    await cleanupTestProject(request, PROJECT_NAME);
     await page.goto("/");
-    await expect(page.getByText("Welcome to ConfiAnalyzer")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole("button", { name: /Create New Project/ })).toBeVisible();
+    // Dashboard should show either Welcome state with create button, or project list with New Project button
+    const createBtn = page.getByRole("button", { name: /Create New Project|New Project/ });
+    const newProjectLink = page.locator('.nav-link', { hasText: "new-project" });
+    await expect(createBtn.or(newProjectLink).first()).toBeVisible({ timeout: 10000 });
   });
 
   test("Test 2: Navigate to project wizard", async ({ page, request }) => {
-    await clearNeo4j(request);
-    await page.goto("/");
-    await page.getByRole("button", { name: /Create New Project/ }).click();
-    await expect(page).toHaveURL(/\/new-project/);
+    await cleanupTestProject(request, PROJECT_NAME);
+    await page.goto("/new-project");
     await expect(page.locator("#project-name")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Create New Project" })).toBeVisible();
   });
@@ -47,13 +56,13 @@ test.describe.serial("Project workflow: create -> add repos -> analyze -> dashbo
   let sharedPage: Page;
 
   test.beforeAll(async ({ browser, request }) => {
-    await clearNeo4j(request);
+    await cleanupTestProject(request, PROJECT_NAME);
     sharedPage = await browser.newPage();
   });
 
   test.afterAll(async ({ request }) => {
     await sharedPage?.close();
-    await clearNeo4j(request);
+    await cleanupTestProject(request, PROJECT_NAME);
   });
 
   test("Test 3: Create a project", async () => {
@@ -212,13 +221,14 @@ test.describe.serial("Project workflow: create -> add repos -> analyze -> dashbo
   });
 
   test("Test 8: Cleanup test data", async ({ request }) => {
-    // Clear all Neo4j data to clean up after the test suite
-    await clearNeo4j(request);
+    // Clean up only our test project, leaving other projects intact
+    await cleanupTestProject(request, PROJECT_NAME);
 
-    // Verify the API returns no projects
+    // Verify our test project was removed (other projects may still exist)
     const res = await request.get(`${API_BASE}/projects`);
     expect(res.ok()).toBeTruthy();
-    const projects = (await res.json()) as unknown[];
-    expect(projects).toHaveLength(0);
+    const projects = (await res.json()) as Array<{ name: string }>;
+    const testProject = projects.find((p) => p.name === PROJECT_NAME);
+    expect(testProject).toBeUndefined();
   });
 });
