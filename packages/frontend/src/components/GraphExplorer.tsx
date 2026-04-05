@@ -292,8 +292,22 @@ export default function GraphExplorer() {
   );
 
   const handleInsightClick = useCallback(
-    (item: InsightItem) => { loadNeighbors(item.id, item.name); },
-    [loadNeighbors],
+    (item: InsightItem) => {
+      // Hotspot items are files (have path, no category) — use neighborhood
+      // Fan-out / dead-code items are functions — use loadNeighbors
+      if (item.path && !item.category) {
+        loadNeighborhood(item.id, neighborhoodDepth);
+        setSidebarVisible(false);
+        setHistory((prev) => {
+          const label = (item.path ?? item.name).split("/").pop() ?? item.name;
+          const filtered = prev.filter((h) => h.id !== item.id);
+          return [...filtered, { id: item.id, label }].slice(-8);
+        });
+      } else {
+        loadNeighbors(item.id, item.name);
+      }
+    },
+    [loadNeighbors, loadNeighborhood, neighborhoodDepth],
   );
 
   const handleShowNeighborhood = useCallback(() => {
