@@ -4,6 +4,7 @@ import { createExpressPlugin } from "./express.js";
 import { createFastifyPlugin } from "./fastify.js";
 import { createReactPlugin } from "./react.js";
 import { createAxiosPlugin } from "./axios.js";
+import { createPrismaPlugin } from "./prisma.js";
 
 export interface FunctionAnalysisResult {
   endpointInfo?: EndpointInfo;
@@ -30,5 +31,5 @@ export interface FrameworkPlugin {
 }
 
 export function createDefaultPlugins(): FrameworkPlugin[] {
-  return [createExpressPlugin(), createFastifyPlugin(), createReactPlugin(), createAxiosPlugin()];
+  return [createExpressPlugin(), createFastifyPlugin(), createReactPlugin(), createAxiosPlugin(), createPrismaPlugin()];
 }

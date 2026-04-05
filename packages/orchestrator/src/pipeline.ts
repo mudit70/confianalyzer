@@ -121,6 +121,8 @@ export async function buildResultFromIr(
   const apiCallers: ApiCaller[] = [];
   const apiEndpointsList: ApiEndpoint[] = [];
   const endpointRouteSet = new Set<string>(); // Dedup: "METHOD::path::funcId"
+  // Track category upgrades from call-level enrichments (funcId -> category)
+  const callLevelCategories = new Map<string, string>();
 
   for (const [repoName, doc] of irDocuments) {
     // Repository node
@@ -255,43 +257,69 @@ export async function buildResultFromIr(
         }
       }
 
-      // Call-level enrichments: detect endpoints from route enrichments on calls
-      // This handles patterns like fastify.get('/path', async (req, res) => { ... })
-      // where the handler is an anonymous arrow function inside an enclosing route-registering function
+      // Call-level enrichments: detect endpoints and DB operations from enrichments on calls
+      // This handles patterns where the enrichment lands on the call node rather than the function:
+      // - Fastify/Express routes with anonymous arrow handlers
+      // - Prisma calls like prisma.user.findMany() inside functions
       for (const call of file.calls) {
         if (!call.enrichments) continue;
-        for (const enrichment of call.enrichments) {
-          if (!enrichment.route) continue;
-          // Find the enclosing function to attach the endpoint to
-          const enclosingFuncName = call.enclosingFunction;
-          if (!enclosingFuncName) continue;
-          const funcKey = makeFunctionId(repoName, file.relativePath, enclosingFuncName);
-          const funcId = functionIdMap.get(funcKey);
-          if (!funcId) continue;
-          // Skip if this exact route was already added via function-level endpointInfo/enrichments
-          const routeKey = `${enrichment.route.method}::${enrichment.route.path}::${funcId}`;
-          if (endpointRouteSet.has(routeKey)) continue;
-          endpointRouteSet.add(routeKey);
+        const enclosingFuncName = call.enclosingFunction;
+        const funcKey = enclosingFuncName ? makeFunctionId(repoName, file.relativePath, enclosingFuncName) : null;
+        const funcId = funcKey ? functionIdMap.get(funcKey) : null;
 
-          const epId = crypto.randomUUID();
-          apiEndpoints.push({
-            id: epId,
-            method: enrichment.route.method,
-            path: enrichment.route.path,
-            fullRoute: enrichment.route.path,
-          });
-          relationships.push({
-            type: "EXPOSES",
-            fromId: funcId,
-            toId: epId,
-            properties: {},
-          });
-          apiEndpointsList.push({
-            functionId: funcId,
-            httpMethod: enrichment.route.method,
-            routePath: enrichment.route.path,
-            repoName,
-          });
+        for (const enrichment of call.enrichments) {
+          // Route enrichments → API endpoint nodes
+          if (enrichment.route && funcId) {
+            const routeKey = `${enrichment.route.method}::${enrichment.route.path}::${funcId}`;
+            if (!endpointRouteSet.has(routeKey)) {
+              endpointRouteSet.add(routeKey);
+              const epId = crypto.randomUUID();
+              apiEndpoints.push({
+                id: epId,
+                method: enrichment.route.method,
+                path: enrichment.route.path,
+                fullRoute: enrichment.route.path,
+              });
+              relationships.push({
+                type: "EXPOSES",
+                fromId: funcId,
+                toId: epId,
+                properties: {},
+              });
+              apiEndpointsList.push({
+                functionId: funcId,
+                httpMethod: enrichment.route.method,
+                routePath: enrichment.route.path,
+                repoName,
+              });
+            }
+          }
+
+          // DB operation enrichments → DB table nodes + READS/WRITES relationships
+          if (enrichment.dbOperation && funcId) {
+            const tableName = enrichment.dbOperation.table;
+            let tableId = dbTableIdMap.get(tableName);
+            if (!tableId) {
+              tableId = crypto.randomUUID();
+              dbTableIdMap.set(tableName, tableId);
+              dbTables.push({
+                id: tableId,
+                name: tableName,
+                schema: null,
+              });
+            }
+            const relType = enrichment.dbOperation.operation === "read" ? "READS" : "WRITES";
+            relationships.push({
+              type: relType,
+              fromId: funcId,
+              toId: tableId,
+              properties: {},
+            });
+            // Track for category upgrade
+            if (!callLevelCategories.has(funcId)) {
+              callLevelCategories.set(funcId, enrichment.suggestedCategory ?? "DB_CALL");
+            }
+          }
         }
       }
 
@@ -319,6 +347,15 @@ export async function buildResultFromIr(
           });
         }
       }
+    }
+  }
+
+  // Upgrade function categories based on call-level enrichments
+  // (e.g., functions containing prisma.user.findMany() should be DB_CALL, not UTILITY)
+  for (const [funcId, category] of callLevelCategories) {
+    const fn = functions.find((f) => f.id === funcId);
+    if (fn && fn.category === "UTILITY") {
+      fn.category = category;
     }
   }
 
