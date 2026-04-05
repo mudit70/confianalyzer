@@ -31,6 +31,19 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   UTILITY: "General-purpose functions",
 };
 
+// ─── Label helpers ───
+
+const MAX_LABEL_LEN = 18;
+function truncateLabel(label: string): string {
+  if (label.length <= MAX_LABEL_LEN) return label;
+  return label.slice(0, MAX_LABEL_LEN - 1) + "\u2026";
+}
+
+function displayLabel(node: GraphNode): string {
+  const raw = node.type === "file" ? node.label.split("/").pop() ?? node.label : node.label;
+  return truncateLabel(raw);
+}
+
 // ─── Layouts ───
 
 function useConcentricLayout(
@@ -40,37 +53,52 @@ function useConcentricLayout(
   height: number,
   nodeDepths: Record<string, number>,
   centerId: string | null,
-): NodePosition[] {
+): { positions: NodePosition[]; maxRadius: number } {
   return useMemo(() => {
-    if (nodes.length === 0) return [];
+    if (nodes.length === 0) return { positions: [], maxRadius: 0 };
     const cx = width / 2;
     const cy = height / 2;
-    const RING_SPACING = 150;
+    const MIN_ARC_DISTANCE = 70; // minimum px between nodes on a ring
+    const MIN_RING_RADIUS = 120;
+
     const depthGroups = new Map<number, GraphNode[]>();
     for (const node of nodes) {
       const d = node.id === centerId ? 0 : (nodeDepths[node.id] ?? 99);
       if (!depthGroups.has(d)) depthGroups.set(d, []);
       depthGroups.get(d)!.push(node);
     }
+
     const positions: NodePosition[] = [];
-    for (const [depth, group] of depthGroups) {
+    let maxRadius = 0;
+    // Compute cumulative radius so outer rings don't overlap inner ones
+    let prevRadius = 0;
+
+    const sortedDepths = Array.from(depthGroups.keys()).sort((a, b) => a - b);
+    for (const depth of sortedDepths) {
+      const group = depthGroups.get(depth)!;
       if (depth === 0) {
         for (const node of group) {
           positions.push({ x: cx, y: cy, vx: 0, vy: 0, node, depth: 0 });
         }
-      } else {
-        const radius = depth * RING_SPACING;
-        group.forEach((node, i) => {
-          const angle = (i / group.length) * Math.PI * 2 - Math.PI / 2;
-          positions.push({
-            x: cx + Math.cos(angle) * radius,
-            y: cy + Math.sin(angle) * radius,
-            vx: 0, vy: 0, node, depth,
-          });
-        });
+        continue;
       }
+      // Adaptive radius: ensure nodes have enough arc spacing for labels
+      const circumNeeded = group.length * MIN_ARC_DISTANCE;
+      const radiusForSpacing = circumNeeded / (2 * Math.PI);
+      const radius = Math.max(radiusForSpacing, prevRadius + MIN_RING_RADIUS);
+      prevRadius = radius;
+      if (radius > maxRadius) maxRadius = radius;
+
+      group.forEach((node, i) => {
+        const angle = (i / group.length) * Math.PI * 2 - Math.PI / 2;
+        positions.push({
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius,
+          vx: 0, vy: 0, node, depth,
+        });
+      });
     }
-    return positions;
+    return { positions, maxRadius };
   }, [nodes, width, height, nodeDepths, centerId, _edges]);
 }
 
@@ -178,13 +206,50 @@ export default function GraphExplorer() {
     });
   }, [projectName]);
 
-  const WIDTH = 800;
-  const HEIGHT = 500;
-  const forcePositions = useForceLayout(graphData.nodes, graphData.edges, WIDTH, HEIGHT);
-  const concentricPositions = useConcentricLayout(
-    graphData.nodes, graphData.edges, WIDTH, HEIGHT, nodeDepths, neighborhoodCenter,
+  // Drag state
+  const [dragOverrides, setDragOverrides] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const [dragging, setDragging] = useState<string | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const BASE_WIDTH = 800;
+  const BASE_HEIGHT = 500;
+
+  const concentricResult = useConcentricLayout(
+    graphData.nodes, graphData.edges, BASE_WIDTH, BASE_HEIGHT, nodeDepths, neighborhoodCenter,
   );
-  const positions = neighborhoodMode ? concentricPositions : forcePositions;
+  const forcePositions = useForceLayout(graphData.nodes, graphData.edges, BASE_WIDTH, BASE_HEIGHT);
+
+  // Dynamic canvas size based on concentric layout
+  const canvasWidth = neighborhoodMode
+    ? Math.max(BASE_WIDTH, concentricResult.maxRadius * 2 + 200)
+    : BASE_WIDTH;
+  const canvasHeight = neighborhoodMode
+    ? Math.max(BASE_HEIGHT, concentricResult.maxRadius * 2 + 200)
+    : BASE_HEIGHT;
+
+  // If canvas grew, re-center the concentric layout
+  const concentricPositions = useMemo(() => {
+    if (!neighborhoodMode) return concentricResult.positions;
+    const offsetX = (canvasWidth - BASE_WIDTH) / 2;
+    const offsetY = (canvasHeight - BASE_HEIGHT) / 2;
+    if (offsetX === 0 && offsetY === 0) return concentricResult.positions;
+    return concentricResult.positions.map((p) => ({
+      ...p,
+      x: p.x + offsetX,
+      y: p.y + offsetY,
+    }));
+  }, [concentricResult, canvasWidth, canvasHeight, neighborhoodMode]);
+
+  // Apply drag overrides to positions
+  const basePositions = neighborhoodMode ? concentricPositions : forcePositions;
+  const positions = useMemo(() => {
+    if (dragOverrides.size === 0) return basePositions;
+    return basePositions.map((p) => {
+      const override = dragOverrides.get(p.node.id);
+      return override ? { ...p, x: override.x, y: override.y } : p;
+    });
+  }, [basePositions, dragOverrides]);
 
   const ringDepths = useMemo(() => {
     if (!neighborhoodMode) return [];
@@ -350,6 +415,59 @@ export default function GraphExplorer() {
     },
     [loadNeighbors, loadNeighborhood, neighborhoodMode, neighborhoodDepth],
   );
+
+  // ─── Drag handlers ───
+
+  const handleDragStart = useCallback((nodeId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDragging(nodeId);
+    dragStartRef.current = { x: e.clientX, y: e.clientY, moved: false };
+  }, []);
+
+  const handleDragMove = useCallback((e: React.MouseEvent) => {
+    if (!dragging || !dragStartRef.current || !svgRef.current) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragStartRef.current.moved = true;
+    if (!dragStartRef.current.moved) return;
+
+    const svgRect = svgRef.current.getBoundingClientRect();
+    const scaleX = canvasWidth / svgRect.width;
+    const scaleY = canvasHeight / svgRect.height;
+
+    // Find original position for this node
+    const orig = basePositions.find((p) => p.node.id === dragging);
+    if (!orig) return;
+    const prevOverride = dragOverrides.get(dragging);
+    const baseX = prevOverride?.x ?? orig.x;
+    const baseY = prevOverride?.y ?? orig.y;
+
+    setDragOverrides((prev) => {
+      const next = new Map(prev);
+      next.set(dragging, {
+        x: baseX + dx * scaleX,
+        y: baseY + dy * scaleY,
+      });
+      return next;
+    });
+    dragStartRef.current.x = e.clientX;
+    dragStartRef.current.y = e.clientY;
+  }, [dragging, basePositions, dragOverrides, canvasWidth, canvasHeight]);
+
+  const handleDragEnd = useCallback(() => {
+    if (dragging && dragStartRef.current && !dragStartRef.current.moved) {
+      // It was a click, not a drag — trigger node click
+      const node = graphData.nodes.find((n) => n.id === dragging);
+      if (node) handleNodeClick(node);
+    }
+    setDragging(null);
+    dragStartRef.current = null;
+  }, [dragging, graphData.nodes, handleNodeClick]);
+
+  // Clear drag overrides when graph data changes
+  useEffect(() => {
+    setDragOverrides(new Map());
+  }, [graphData]);
 
   // ─── Helpers ───
 
@@ -564,18 +682,30 @@ export default function GraphExplorer() {
 
           {/* ─── GRAPH CANVAS ─── */}
           {!isEmpty && (
-            <div className="graph-explorer__canvas">
-              <svg width={WIDTH} height={HEIGHT} className="graph-svg">
+            <div className="graph-explorer__canvas" style={{ overflow: "auto", maxHeight: "70vh" }}>
+              <svg ref={svgRef} width={canvasWidth} height={canvasHeight} className="graph-svg"
+                style={{ minWidth: canvasWidth, minHeight: canvasHeight }}
+                onMouseMove={handleDragMove}
+                onMouseUp={handleDragEnd}
+                onMouseLeave={handleDragEnd}>
+
                 {/* Concentric ring guides with depth labels */}
-                {neighborhoodMode && ringDepths.map((d) => (
-                  <g key={`ring-${d}`}>
-                    <circle cx={WIDTH / 2} cy={HEIGHT / 2} r={d * 150} className="graph-explorer__ring" />
-                    <text x={WIDTH / 2 + d * 150 + 5} y={HEIGHT / 2 - 5}
-                      style={{ fill: "#475569", fontSize: "0.65em" }}>
-                      {d === 1 ? "direct" : `${d} hops`}
-                    </text>
-                  </g>
-                ))}
+                {neighborhoodMode && ringDepths.map((d) => {
+                  // Compute actual ring radius from positions
+                  const nodesAtDepth = positions.filter((p) => p.depth === d);
+                  if (nodesAtDepth.length === 0) return null;
+                  const cx = canvasWidth / 2;
+                  const cy = canvasHeight / 2;
+                  const avgR = nodesAtDepth.reduce((sum, p) => sum + Math.sqrt((p.x - cx) ** 2 + (p.y - cy) ** 2), 0) / nodesAtDepth.length;
+                  return (
+                    <g key={`ring-${d}`}>
+                      <circle cx={cx} cy={cy} r={avgR} className="graph-explorer__ring" />
+                      <text x={cx + avgR + 5} y={cy - 5} style={{ fill: "#475569", fontSize: "0.65em" }}>
+                        {d === 1 ? "direct" : `${d} hops`}
+                      </text>
+                    </g>
+                  );
+                })}
 
                 {/* Edges — styled by relationship type */}
                 {graphData.edges.map((edge) => {
@@ -585,7 +715,6 @@ export default function GraphExplorer() {
                   const edgeOpacity = neighborhoodMode
                     ? (neighborhoodNodeIds.has(edge.source) && neighborhoodNodeIds.has(edge.target) ? 1 : 0.15)
                     : 1;
-                  // Style by edge type
                   const isImport = edge.type === "IMPORTS";
                   const isDefinedIn = edge.type === "DEFINED_IN";
                   const isInRepo = edge.type === "IN_REPO" || edge.type === "BELONGS_TO" || edge.type === "CONTAINS";
@@ -607,18 +736,27 @@ export default function GraphExplorer() {
                   </marker>
                 </defs>
 
-                {/* Nodes */}
+                {/* Nodes with radial labels and drag support */}
                 {positions.map((p) => {
                   const isCenter = neighborhoodMode && p.node.id === neighborhoodCenter;
                   const opacity = getNodeOpacity(p.node);
-                  const nodeClass = [
-                    "graph-node",
-                    isCenter ? "graph-explorer__node--center" : "",
-                  ].filter(Boolean).join(" ");
+                  const isDragging = dragging === p.node.id;
+
+                  // Radial label positioning: labels point outward from center
+                  const cx = canvasWidth / 2;
+                  const cy = canvasHeight / 2;
+                  const angle = Math.atan2(p.y - cy, p.x - cx);
+                  const isRightHalf = angle > -Math.PI / 2 && angle < Math.PI / 2;
+                  const labelOffset = 18;
+                  const labelX = isCenter ? 0 : Math.cos(angle) * labelOffset;
+                  const labelY = isCenter ? -18 : Math.sin(angle) * labelOffset;
+                  const textAnchor = isCenter ? "middle" : isRightHalf ? "start" : "end";
+
                   return (
                     <g key={p.node.id} transform={`translate(${p.x},${p.y})`}
-                      onClick={() => handleNodeClick(p.node)}
-                      className={nodeClass} style={{ opacity, cursor: "pointer" }}>
+                      onMouseDown={(e) => handleDragStart(p.node.id, e)}
+                      className={`graph-node${isCenter ? " graph-explorer__node--center" : ""}`}
+                      style={{ opacity, cursor: isDragging ? "grabbing" : "pointer" }}>
                       {isCenter && (
                         <circle r={22} fill="none" stroke={getNodeFill(p.node)} strokeWidth={3}
                           className="graph-explorer__node--center-glow" />
@@ -626,12 +764,14 @@ export default function GraphExplorer() {
                       <circle
                         r={isCenter ? 16 : selectedNode?.id === p.node.id ? 14 : p.node.type === "file" ? 12 : 10}
                         fill={getNodeFill(p.node)}
-                        stroke={isCenter ? "#facc15" : selectedNode?.id === p.node.id ? "#fff" : "none"}
+                        stroke={isCenter ? "#facc15" : selectedNode?.id === p.node.id ? "#fff" : isDragging ? "#facc15" : "none"}
                         strokeWidth={isCenter ? 3 : 2}
                       />
                       <title>{p.node.label}</title>
-                      <text y={-16} textAnchor="middle" className="graph-node__label">
-                        {p.node.type === "file" ? p.node.label.split("/").pop() ?? p.node.label : p.node.label}
+                      <text x={labelX} y={labelY} textAnchor={textAnchor}
+                        className="graph-node__label"
+                        dominantBaseline={isCenter ? "auto" : "central"}>
+                        {displayLabel(p.node)}
                       </text>
                     </g>
                   );
@@ -641,7 +781,7 @@ export default function GraphExplorer() {
               {/* Enhanced Legend */}
               <div className="graph-legend" style={{ flexWrap: "wrap", gap: "0.5rem 1rem" }}>
                 <span style={{ color: "#64748b", fontSize: "0.75em", marginRight: "0.25rem" }}>
-                  Arrow: caller &rarr; callee
+                  Arrow: caller &rarr; callee | Drag nodes to rearrange
                 </span>
                 {Object.entries(CATEGORY_COLORS).map(([cat, color]) => (
                   <span key={cat} className="graph-legend__item" title={CATEGORY_DESCRIPTIONS[cat] ?? ""}>
