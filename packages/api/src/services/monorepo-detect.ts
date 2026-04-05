@@ -88,6 +88,22 @@ function resolveWorkspacePatterns(rootPath: string, patterns: string[]): string[
 }
 
 /**
+ * Check if a directory looks like a standalone project (has a project marker file).
+ */
+const PROJECT_MARKERS = [
+  "package.json", "go.mod", "Cargo.toml", "setup.py", "pyproject.toml",
+  "pom.xml", "build.gradle", "build.gradle.kts", "Gemfile", "composer.json",
+  "CMakeLists.txt", "Makefile", "tsconfig.json",
+];
+
+function hasProjectMarker(dir: string): boolean {
+  for (const marker of PROJECT_MARKERS) {
+    if (fs.existsSync(path.join(dir, marker))) return true;
+  }
+  return false;
+}
+
+/**
  * Build SubProject entries from resolved directory paths.
  */
 function buildSubProjects(rootPath: string, dirs: string[]): SubProject[] {
@@ -101,6 +117,28 @@ function buildSubProjects(rootPath: string, dirs: string[]): SubProject[] {
     subProjects.push({ name, relativePath, absolutePath: dir, language, fileCount });
   }
   return subProjects.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+}
+
+/**
+ * Remove parent directories when their children are also in the list.
+ * Prevents double-counting in deeply nested monorepos (e.g., medusa, typebot.io).
+ */
+function deduplicateNested(subProjects: SubProject[]): SubProject[] {
+  // Sort deepest first so we process children before parents
+  const sorted = [...subProjects].sort(
+    (a, b) => b.relativePath.split("/").length - a.relativePath.split("/").length,
+  );
+
+  const kept: SubProject[] = [];
+  for (const sp of sorted) {
+    const isParentOfKept = kept.some(
+      (child) => child.relativePath.startsWith(sp.relativePath + "/"),
+    );
+    if (isParentOfKept) continue; // Skip — children already cover this directory
+    kept.push(sp);
+  }
+
+  return kept.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
 
 /**
@@ -136,7 +174,7 @@ export function detectMonorepoStructure(rootPath: string): MonorepoDetectionResu
       }
       if (patterns.length > 0) {
         const dirs = resolveWorkspacePatterns(rootPath, patterns);
-        const subProjects = buildSubProjects(rootPath, dirs);
+        const subProjects = deduplicateNested(buildSubProjects(rootPath, dirs));
         if (subProjects.length > 1) {
           return { isMonorepo: true, tool: "pnpm", configFile: "pnpm-workspace.yaml", subProjects };
         }
@@ -157,7 +195,7 @@ export function detectMonorepoStructure(rootPath: string): MonorepoDetectionResu
         undefined;
       if (workspaces && workspaces.length > 0) {
         const dirs = resolveWorkspacePatterns(rootPath, workspaces);
-        const subProjects = buildSubProjects(rootPath, dirs);
+        const subProjects = deduplicateNested(buildSubProjects(rootPath, dirs));
         if (subProjects.length > 1) {
           const tool = fs.existsSync(path.join(rootPath, "yarn.lock")) ? "yarn" : "npm";
           return { isMonorepo: true, tool, configFile: "package.json", subProjects };
@@ -175,7 +213,7 @@ export function detectMonorepoStructure(rootPath: string): MonorepoDetectionResu
       const lerna = JSON.parse(fs.readFileSync(lernaJson, "utf-8"));
       const patterns: string[] = lerna.packages ?? ["packages/*"];
       const dirs = resolveWorkspacePatterns(rootPath, patterns);
-      const subProjects = buildSubProjects(rootPath, dirs);
+      const subProjects = deduplicateNested(buildSubProjects(rootPath, dirs));
       if (subProjects.length > 1) {
         return { isMonorepo: true, tool: "lerna", configFile: "lerna.json", subProjects };
       }
@@ -197,7 +235,7 @@ export function detectMonorepoStructure(rootPath: string): MonorepoDetectionResu
             .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
             .filter(Boolean);
           const dirs = resolveWorkspacePatterns(rootPath, patterns);
-          const subProjects = buildSubProjects(rootPath, dirs);
+          const subProjects = deduplicateNested(buildSubProjects(rootPath, dirs));
           if (subProjects.length > 1) {
             return { isMonorepo: true, tool: "cargo", configFile: "Cargo.toml", subProjects };
           }
@@ -227,7 +265,7 @@ export function detectMonorepoStructure(rootPath: string): MonorepoDetectionResu
       }
       if (patterns.length > 0) {
         const dirs = resolveWorkspacePatterns(rootPath, patterns);
-        const subProjects = buildSubProjects(rootPath, dirs);
+        const subProjects = deduplicateNested(buildSubProjects(rootPath, dirs));
         if (subProjects.length > 1) {
           return { isMonorepo: true, tool: "go", configFile: "go.work", subProjects };
         }
@@ -238,9 +276,10 @@ export function detectMonorepoStructure(rootPath: string): MonorepoDetectionResu
   }
 
   // 6. Fallback heuristic — look for common monorepo directory patterns
-  const heuristicParents = ["apps", "packages", "services", "libs", "modules"];
+  // Phase A: check standard parent directories (apps/, packages/, etc.)
+  const standardParents = ["apps", "packages", "services", "libs", "modules"];
   const heuristicDirs: string[] = [];
-  for (const parent of heuristicParents) {
+  for (const parent of standardParents) {
     const parentDir = path.join(rootPath, parent);
     if (fs.existsSync(parentDir) && fs.statSync(parentDir).isDirectory()) {
       try {
@@ -256,7 +295,30 @@ export function detectMonorepoStructure(rootPath: string): MonorepoDetectionResu
     }
   }
   if (heuristicDirs.length > 1) {
-    const subProjects = buildSubProjects(rootPath, heuristicDirs);
+    const subProjects = deduplicateNested(buildSubProjects(rootPath, heuristicDirs));
+    if (subProjects.length > 1) {
+      return { isMonorepo: true, tool: "heuristic", configFile: null, subProjects };
+    }
+  }
+
+  // Phase B: check for top-level directories that are standalone projects
+  // (e.g., ToolJet with frontend/, server/, plugins/)
+  // Each candidate must have a project marker file to avoid false positives
+  const topLevelCandidates = [
+    "frontend", "backend", "server", "api", "web", "client",
+    "plugins", "extensions", "marketplace", "cli", "tools",
+  ];
+  const markerDirs: string[] = [];
+  for (const candidate of topLevelCandidates) {
+    const candidateDir = path.join(rootPath, candidate);
+    if (fs.existsSync(candidateDir) && fs.statSync(candidateDir).isDirectory()) {
+      if (hasProjectMarker(candidateDir)) {
+        markerDirs.push(candidateDir);
+      }
+    }
+  }
+  if (markerDirs.length > 1) {
+    const subProjects = buildSubProjects(rootPath, markerDirs);
     if (subProjects.length > 1) {
       return { isMonorepo: true, tool: "heuristic", configFile: null, subProjects };
     }
