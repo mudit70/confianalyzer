@@ -577,7 +577,7 @@ export default function GraphExplorer() {
                   </g>
                 ))}
 
-                {/* Edges */}
+                {/* Edges — styled by relationship type */}
                 {graphData.edges.map((edge) => {
                   const s = posById.get(edge.source);
                   const t = posById.get(edge.target);
@@ -585,10 +585,19 @@ export default function GraphExplorer() {
                   const edgeOpacity = neighborhoodMode
                     ? (neighborhoodNodeIds.has(edge.source) && neighborhoodNodeIds.has(edge.target) ? 1 : 0.15)
                     : 1;
+                  // Style by edge type
+                  const isImport = edge.type === "IMPORTS";
+                  const isDefinedIn = edge.type === "DEFINED_IN";
+                  const isInRepo = edge.type === "IN_REPO" || edge.type === "BELONGS_TO" || edge.type === "CONTAINS";
+                  const stroke = isImport ? "#3b82f6" : isDefinedIn ? "#94a3b8" : isInRepo ? "#cbd5e1" : "#94a3b8";
+                  const strokeDash = isDefinedIn ? "4 3" : isInRepo ? "2 3" : "none";
+                  const strokeWidth = isInRepo ? 0.8 : isImport ? 1.8 : 1.5;
                   return (
                     <line key={edge.id} x1={s.x} y1={s.y} x2={t.x} y2={t.y}
-                      className="graph-edge" style={{ opacity: edgeOpacity }}
-                      markerEnd="url(#arrowhead)" />
+                      stroke={stroke} strokeWidth={strokeWidth}
+                      strokeDasharray={strokeDash}
+                      style={{ opacity: edgeOpacity }}
+                      markerEnd={isInRepo ? undefined : "url(#arrowhead)"} />
                   );
                 })}
 

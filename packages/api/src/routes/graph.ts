@@ -482,37 +482,46 @@ router.get(
       const depth = Math.min(Math.max(Number(req.query.depth) || 2, 1), 3);
       const maxNodes = Math.min(Math.max(parseInt(req.query.maxNodes as string, 10) || 100, 1), 500);
 
-      const cypher = `
+      // Two queries: one for neighbor nodes, one for relationships with app-level IDs
+      const nodesCypher = `
         MATCH (center {id: $nodeId})
         OPTIONAL MATCH path = (center)-[*1..${depth}]-(neighbor)
         WHERE neighbor <> center
-        WITH center,
-             collect(DISTINCT neighbor) AS neighbors,
-             collect(DISTINCT relationships(path)) AS allRelPaths
-        WITH center, neighbors[0..$maxNodes] AS neighbors, allRelPaths
-        RETURN center, neighbors, allRelPaths
+        WITH center, collect(DISTINCT neighbor)[0..$maxNodes] AS neighbors
+        RETURN center, neighbors
       `;
 
-      const rows = await runQuery(cypher, { nodeId: id, maxNodes });
+      const relsCypher = `
+        MATCH (center {id: $nodeId})
+        OPTIONAL MATCH path = (center)-[*1..${depth}]-(neighbor)
+        WHERE neighbor <> center
+        UNWIND relationships(path) AS rel
+        WITH DISTINCT rel, startNode(rel) AS sn, endNode(rel) AS en
+        RETURN sn.id AS sourceId, en.id AS targetId, type(rel) AS relType
+      `;
 
-      if (rows.length === 0) {
+      const [nodesRows, relsRows] = await Promise.all([
+        runQuery(nodesCypher, { nodeId: id, maxNodes }),
+        runQuery(relsCypher, { nodeId: id }),
+      ]);
+
+      if (nodesRows.length === 0) {
         throw new ApiError(404, `Node '${id}' not found`);
       }
 
-      const row = rows[0];
+      const row = nodesRows[0];
       const center = row.center as Record<string, unknown>;
       const neighbors = (row.neighbors as Record<string, unknown>[]) ?? [];
-      const allRelPaths = (row.allRelPaths as Array<Array<Record<string, unknown>>>) ?? [];
 
       // Build center node
       const centerNode = toGraphNode(center);
 
-      // Build neighbor nodes with depth tracking
+      // Build neighbor nodes
       const nodeDepths: Record<string, number> = {};
       nodeDepths[center.id as string] = 0;
 
       const nodes: Record<string, unknown>[] = [];
-      const nodesSet = new Set<string>();
+      const nodesSet = new Set<string>([center.id as string]);
 
       for (const neighbor of neighbors) {
         if (!neighbor || !neighbor.id) continue;
@@ -522,29 +531,27 @@ router.get(
         nodes.push(toGraphNode(neighbor));
       }
 
-      // Flatten relationships and deduplicate
+      // Build edges from relationships query (uses app-level UUIDs)
       const edges: Record<string, unknown>[] = [];
       const edgeSet = new Set<string>();
 
-      for (const relPath of allRelPaths) {
-        if (!Array.isArray(relPath)) continue;
-        for (const rel of relPath) {
-          if (!rel) continue;
-          const r = rel as Record<string, unknown>;
-          const sourceId = r._startNodeId ?? r.source ?? r.start;
-          const targetId = r._endNodeId ?? r.target ?? r.end;
-          const relType = r._type ?? r.type ?? "RELATED";
-          const edgeId = `${sourceId}-${relType}-${targetId}`;
-          if (edgeSet.has(edgeId)) continue;
-          edgeSet.add(edgeId);
-          edges.push({
-            id: edgeId,
-            source: sourceId,
-            target: targetId,
-            type: relType,
-            properties: {},
-          });
-        }
+      for (const rel of relsRows) {
+        const sourceId = rel.sourceId as string;
+        const targetId = rel.targetId as string;
+        const relType = rel.relType as string;
+        if (!sourceId || !targetId) continue;
+        // Only include edges where both endpoints are in our node set
+        if (!nodesSet.has(sourceId) || !nodesSet.has(targetId)) continue;
+        const edgeId = `${sourceId}-${relType}-${targetId}`;
+        if (edgeSet.has(edgeId)) continue;
+        edgeSet.add(edgeId);
+        edges.push({
+          id: edgeId,
+          source: sourceId,
+          target: targetId,
+          type: relType,
+          properties: {},
+        });
       }
 
       // Compute node depths via BFS on edges

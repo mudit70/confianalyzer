@@ -73,6 +73,30 @@ test.describe("Issue #16: Entry-to-Exit Flow Tracing", () => {
 });
 
 test.describe("Issue #17: Circular Dependency Detection", () => {
+  test("Clicking a hotspot file loads neighborhood graph without 404", async ({ page }) => {
+    await page.goto("/graph");
+    // Sidebar should be open by default with Hotspots tab
+    await expect(page.locator(".intelligence-sidebar")).toBeVisible({ timeout: 5000 });
+    await page.locator('.intelligence-tab', { hasText: "Hotspots" }).click();
+    await page.waitForTimeout(1500);
+    // Click the first hotspot item
+    const hotspotItem = page.locator(".insight-item").first();
+    if (await hotspotItem.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await hotspotItem.click();
+      await page.waitForTimeout(1500);
+      // Should NOT show a 404 error
+      const errorMsg = page.locator(".error-message");
+      const hasError = await errorMsg.isVisible().catch(() => false);
+      if (hasError) {
+        const text = await errorMsg.textContent();
+        expect(text).not.toContain("404");
+        expect(text).not.toContain("not found");
+      }
+      // Graph should have loaded — SVG canvas should be visible with nodes
+      await expect(page.locator(".graph-svg")).toBeVisible({ timeout: 5000 });
+    }
+  });
+
   test("Graph Explorer Intelligence Sidebar has Cycles tab", async ({ page }) => {
     await page.goto("/graph");
     // Open the intelligence sidebar if it has a toggle
