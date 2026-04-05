@@ -27,6 +27,7 @@ import type {
   RepoGraphResponse,
   DbTableInfo,
   DbImpactResponse,
+  MonorepoDetectionResult,
 } from "../types/graph";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
@@ -79,6 +80,13 @@ export const apiClient = {
 
   listRepositories(projectName: string): Promise<RepositoryInfo[]> {
     return request(`/projects/${encodeURIComponent(projectName)}/repositories`);
+  },
+
+  detectStructure(repoPath: string): Promise<MonorepoDetectionResult> {
+    return request("/projects/detect-structure", {
+      method: "POST",
+      body: JSON.stringify({ path: repoPath }),
+    });
   },
 
   removeRepository(projectName: string, repoName: string): Promise<void> {

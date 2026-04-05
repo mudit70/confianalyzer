@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import { runQuery } from "../services/neo4j.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { detectLanguage } from "../services/language-detect.js";
+import { detectMonorepoStructure } from "../services/monorepo-detect.js";
 
 const router = Router();
 
@@ -268,6 +269,31 @@ router.delete("/:name/repositories/:repoName", async (req: Request, res: Respons
     );
 
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Monorepo Detection ───
+
+/**
+ * POST /api/projects/detect-structure — detect monorepo structure in a path
+ */
+router.post("/detect-structure", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { path: repoPath } = req.body as { path?: string };
+    if (!repoPath) {
+      throw new ApiError(400, "path is required");
+    }
+    if (!fs.existsSync(repoPath)) {
+      throw new ApiError(400, `Path does not exist: ${repoPath}`);
+    }
+    if (!fs.statSync(repoPath).isDirectory()) {
+      throw new ApiError(400, `Path is not a directory: ${repoPath}`);
+    }
+
+    const result = detectMonorepoStructure(repoPath);
+    res.json(result);
   } catch (err) {
     next(err);
   }

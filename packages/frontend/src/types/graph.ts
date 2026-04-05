@@ -309,6 +309,23 @@ export interface SummarizeResponse {
   concerns: string[];
 }
 
+// ─── Monorepo Detection ───
+
+export interface MonorepoSubProject {
+  name: string;
+  relativePath: string;
+  absolutePath: string;
+  language: string;
+  fileCount: number;
+}
+
+export interface MonorepoDetectionResult {
+  isMonorepo: boolean;
+  tool: string | null;
+  configFile: string | null;
+  subProjects: MonorepoSubProject[];
+}
+
 // ─── Blast Radius ───
 
 export interface BlastRadiusCaller {

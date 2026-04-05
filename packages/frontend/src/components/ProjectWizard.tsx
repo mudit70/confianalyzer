@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
-import type { RepositoryInfo, AnalysisStatus } from "../types/graph";
+import type { RepositoryInfo, AnalysisStatus, MonorepoSubProject } from "../types/graph";
 
 type WizardStep = "create" | "repos" | "analyzing" | "done";
 
@@ -18,6 +18,14 @@ export default function ProjectWizard() {
   const [repoPath, setRepoPath] = useState("");
   const [repositories, setRepositories] = useState<RepositoryInfo[]>([]);
   const [addingRepo, setAddingRepo] = useState(false);
+
+  // Monorepo detection
+  const [detecting, setDetecting] = useState(false);
+  const [detectedSubProjects, setDetectedSubProjects] = useState<MonorepoSubProject[]>([]);
+  const [selectedSubProjects, setSelectedSubProjects] = useState<Set<string>>(new Set());
+  const [monorepoTool, setMonorepoTool] = useState<string | null>(null);
+  const [monorepoConfigFile, setMonorepoConfigFile] = useState<string | null>(null);
+  const [addingMonorepo, setAddingMonorepo] = useState(false);
 
   // Analysis
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus | null>(null);
@@ -61,6 +69,79 @@ export default function ProjectWizard() {
     } finally {
       setAddingRepo(false);
     }
+  }
+
+  async function handleDetectStructure() {
+    if (!repoPath.trim()) return;
+    setDetecting(true);
+    setError(null);
+    setDetectedSubProjects([]);
+    setSelectedSubProjects(new Set());
+    setMonorepoTool(null);
+    setMonorepoConfigFile(null);
+    try {
+      const result = await apiClient.detectStructure(repoPath.trim());
+      if (result.isMonorepo && result.subProjects.length > 0) {
+        setDetectedSubProjects(result.subProjects);
+        setSelectedSubProjects(new Set(result.subProjects.map((sp) => sp.relativePath)));
+        setMonorepoTool(result.tool);
+        setMonorepoConfigFile(result.configFile);
+      } else {
+        // Not a monorepo — add as single repo
+        if (!repoName.trim()) {
+          // Auto-generate name from path
+          const pathName = repoPath.trim().split("/").pop() ?? "repo";
+          setRepoName(pathName);
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to detect structure");
+    } finally {
+      setDetecting(false);
+    }
+  }
+
+  function toggleSubProject(relativePath: string) {
+    setSelectedSubProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(relativePath)) next.delete(relativePath);
+      else next.add(relativePath);
+      return next;
+    });
+  }
+
+  async function handleAddSelectedSubProjects() {
+    setAddingMonorepo(true);
+    setError(null);
+    try {
+      const rootPath = repoPath.trim();
+      const selected = detectedSubProjects.filter((sp) => selectedSubProjects.has(sp.relativePath));
+      for (const sp of selected) {
+        const repo = await apiClient.addRepository(projectName, {
+          name: sp.name,
+          path: sp.absolutePath,
+        });
+        setRepositories((prev) => [...prev, repo]);
+      }
+      // Clear detection state
+      setDetectedSubProjects([]);
+      setSelectedSubProjects(new Set());
+      setRepoPath("");
+      setRepoName("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add repositories");
+    } finally {
+      setAddingMonorepo(false);
+    }
+  }
+
+  function handleAddAsSingleRepo() {
+    // Clear detection and let user add the root path as one repo
+    setDetectedSubProjects([]);
+    setSelectedSubProjects(new Set());
+    const pathName = repoPath.trim().split("/").pop() ?? "repo";
+    if (!repoName.trim()) setRepoName(pathName);
+    // User can now click "Add" to add it as a single repo
   }
 
   async function handleRemoveRepo(name: string) {
@@ -152,8 +233,23 @@ export default function ProjectWizard() {
             <input
               placeholder="Local path (e.g., /Users/me/code/frontend)"
               value={repoPath}
-              onChange={(e) => setRepoPath(e.target.value)}
+              onChange={(e) => {
+                setRepoPath(e.target.value);
+                // Clear detection when path changes
+                if (detectedSubProjects.length > 0) {
+                  setDetectedSubProjects([]);
+                  setSelectedSubProjects(new Set());
+                }
+              }}
             />
+            <button
+              className="btn"
+              onClick={handleDetectStructure}
+              disabled={!repoPath.trim() || detecting}
+              title="Check if this path is a monorepo with multiple sub-projects"
+            >
+              {detecting ? "Detecting..." : "Detect Structure"}
+            </button>
             <button
               className="btn"
               onClick={handleAddRepo}
@@ -162,6 +258,66 @@ export default function ProjectWizard() {
               {addingRepo ? "Adding..." : "Add"}
             </button>
           </div>
+
+          {/* Monorepo detection results */}
+          {detectedSubProjects.length > 0 && (
+            <div className="wizard__monorepo-detection" style={{
+              border: "1px solid #6366f1",
+              borderRadius: "8px",
+              padding: "1rem",
+              margin: "1rem 0",
+              backgroundColor: "rgba(99, 102, 241, 0.05)",
+            }}>
+              <h4 style={{ margin: "0 0 0.5rem 0", color: "#6366f1" }}>
+                Monorepo detected
+                {monorepoTool && <span style={{ fontWeight: "normal", color: "#94a3b8" }}> ({monorepoTool} workspace{monorepoConfigFile ? ` — ${monorepoConfigFile}` : ""})</span>}
+              </h4>
+              <p style={{ margin: "0 0 0.75rem 0", color: "#94a3b8", fontSize: "0.9em" }}>
+                Found {detectedSubProjects.length} sub-projects. Select which ones to add as separate repositories for cross-app dependency analysis.
+              </p>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginBottom: "0.75rem" }}>
+                {detectedSubProjects.map((sp) => (
+                  <label key={sp.relativePath} style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    padding: "0.4rem 0.5rem",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    backgroundColor: selectedSubProjects.has(sp.relativePath) ? "rgba(99, 102, 241, 0.1)" : "transparent",
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedSubProjects.has(sp.relativePath)}
+                      onChange={() => toggleSubProject(sp.relativePath)}
+                    />
+                    <span style={{ fontWeight: 500 }}>{sp.relativePath}</span>
+                    <span className="badge" style={{ fontSize: "0.75em" }}>{sp.language}</span>
+                    <span style={{ color: "#94a3b8", fontSize: "0.85em" }}>{sp.fileCount} files</span>
+                  </label>
+                ))}
+              </div>
+
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  className="btn btn--primary"
+                  onClick={handleAddSelectedSubProjects}
+                  disabled={selectedSubProjects.size === 0 || addingMonorepo}
+                >
+                  {addingMonorepo
+                    ? "Adding..."
+                    : `Add ${selectedSubProjects.size} as separate repositories`}
+                </button>
+                <button
+                  className="btn"
+                  onClick={handleAddAsSingleRepo}
+                >
+                  Add as single repository
+                </button>
+              </div>
+            </div>
+          )}
 
           {repositories.length > 0 && (
             <div className="wizard__repo-list">
