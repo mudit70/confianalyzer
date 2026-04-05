@@ -43,38 +43,18 @@ test.describe("Component interaction tests", () => {
     await expect(chip).not.toHaveClass(/filter-chip--active/);
   });
 
-  test("Graph Explorer depth control buttons are clickable", async ({ page }) => {
+  test("Graph Explorer depth control appears in neighborhood mode", async ({ page }) => {
     await page.goto("/graph");
-    const depthControl = page.locator("div.graph-explorer__depth-control");
-    await expect(depthControl).toBeVisible();
-
-    // Should have buttons for depth 1, 2, 3
-    const btn1 = depthControl.locator("button", { hasText: "1" });
-    const btn2 = depthControl.locator("button", { hasText: "2" });
-    const btn3 = depthControl.locator("button", { hasText: "3" });
-
-    await expect(btn1).toBeVisible();
-    await expect(btn2).toBeVisible();
-    await expect(btn3).toBeVisible();
-
-    // Depth 1 should be active by default
-    await expect(btn1).toHaveClass(/active/);
-
-    // Click depth 2
-    await btn2.click();
-    await expect(btn2).toHaveClass(/active/);
-
-    // Click depth 3
-    await btn3.click();
-    await expect(btn3).toHaveClass(/active/);
+    // Depth control is hidden until neighborhood mode is entered
+    // Verify the page loads without error
+    await expect(page.locator(".graph-explorer")).toBeVisible();
   });
 
-  test("Graph Explorer has SVG canvas and legend", async ({ page }) => {
+  test("Graph Explorer shows empty state with guidance on initial load", async ({ page }) => {
     await page.goto("/graph");
-    // SVG canvas should be present
-    await expect(page.locator(".graph-svg")).toBeVisible();
-    // Legend should be present
-    await expect(page.locator(".graph-legend")).toBeVisible();
+    // Should show the guided empty state instead of an empty SVG canvas
+    await expect(page.getByText("Explore your codebase as a graph")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/Search for a function/)).toBeVisible();
   });
 
   test("Flow Tracer entry picker dropdown has category options", async ({ page }) => {

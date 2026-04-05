@@ -30,15 +30,11 @@ test.describe("Error states - graceful degradation without API", () => {
     expect(body).toBeTruthy();
   });
 
-  test("Graph Explorer shows appropriate state when no data loaded", async ({ page }) => {
+  test("Graph Explorer shows guided empty state when no data loaded", async ({ page }) => {
     await page.goto("/graph");
-    // Without searching, the graph should show the SVG canvas but with no nodes
     await expect(page.locator(".graph-explorer")).toBeVisible();
-    await expect(page.locator(".graph-svg")).toBeVisible();
-
-    // No search results or graph nodes should be shown initially
-    const searchResults = page.locator(".search-results");
-    await expect(searchResults).not.toBeVisible();
+    // Should show guided empty state instead of blank canvas
+    await expect(page.getByText("Explore your codebase as a graph")).toBeVisible({ timeout: 5000 });
   });
 
   test("App does not crash - no uncaught errors in console", async ({ page }) => {

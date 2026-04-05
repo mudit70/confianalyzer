@@ -18,13 +18,21 @@ interface NodePosition {
   vx: number;
   vy: number;
   node: GraphNode;
-  depth?: number; // For neighborhood mode
+  depth?: number;
 }
 
-/**
- * Concentric ring layout: places nodes in concentric circles based on depth.
- * Center node at the middle, depth-1 on inner ring, depth-2 on outer ring, etc.
- */
+// ─── Category descriptions for legend ───
+const CATEGORY_DESCRIPTIONS: Record<string, string> = {
+  UI_INTERACTION: "UI components & event handlers",
+  HANDLER: "Functions called by endpoints",
+  API_CALLER: "HTTP client calls",
+  API_ENDPOINT: "Route handlers",
+  DB_CALL: "Database operations",
+  UTILITY: "General-purpose functions",
+};
+
+// ─── Layouts ───
+
 function useConcentricLayout(
   nodes: GraphNode[],
   _edges: GraphEdge[],
@@ -35,24 +43,18 @@ function useConcentricLayout(
 ): NodePosition[] {
   return useMemo(() => {
     if (nodes.length === 0) return [];
-
     const cx = width / 2;
     const cy = height / 2;
     const RING_SPACING = 150;
-
-    // Group nodes by depth
     const depthGroups = new Map<number, GraphNode[]>();
     for (const node of nodes) {
       const d = node.id === centerId ? 0 : (nodeDepths[node.id] ?? 99);
       if (!depthGroups.has(d)) depthGroups.set(d, []);
       depthGroups.get(d)!.push(node);
     }
-
     const positions: NodePosition[] = [];
-
     for (const [depth, group] of depthGroups) {
       if (depth === 0) {
-        // Center node
         for (const node of group) {
           positions.push({ x: cx, y: cy, vx: 0, vy: 0, node, depth: 0 });
         }
@@ -63,15 +65,11 @@ function useConcentricLayout(
           positions.push({
             x: cx + Math.cos(angle) * radius,
             y: cy + Math.sin(angle) * radius,
-            vx: 0,
-            vy: 0,
-            node,
-            depth,
+            vx: 0, vy: 0, node, depth,
           });
         });
       }
     }
-
     return positions;
   }, [nodes, width, height, nodeDepths, centerId, _edges]);
 }
@@ -86,27 +84,17 @@ function useForceLayout(
   const frameRef = useRef(0);
 
   useEffect(() => {
-    if (nodes.length === 0) {
-      setPositions([]);
-      return;
-    }
-
+    if (nodes.length === 0) { setPositions([]); return; }
     const cx = width / 2;
     const cy = height / 2;
-
     const pos: NodePosition[] = nodes.map((node, i) => ({
       x: cx + Math.cos((i / nodes.length) * Math.PI * 2) * 150,
       y: cy + Math.sin((i / nodes.length) * Math.PI * 2) * 150,
-      vx: 0,
-      vy: 0,
-      node,
+      vx: 0, vy: 0, node,
     }));
-
     const idToIdx = new Map(nodes.map((n, i) => [n.id, i]));
-
     let iterations = 0;
     function tick() {
-      // Repulsion
       for (let i = 0; i < pos.length; i++) {
         for (let j = i + 1; j < pos.length; j++) {
           const dx = pos[j].x - pos[i].x;
@@ -115,14 +103,10 @@ function useForceLayout(
           const force = 3000 / (dist * dist);
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
-          pos[i].vx -= fx;
-          pos[i].vy -= fy;
-          pos[j].vx += fx;
-          pos[j].vy += fy;
+          pos[i].vx -= fx; pos[i].vy -= fy;
+          pos[j].vx += fx; pos[j].vy += fy;
         }
       }
-
-      // Attraction (edges)
       for (const edge of edges) {
         const si = idToIdx.get(edge.source);
         const ti = idToIdx.get(edge.target);
@@ -133,92 +117,85 @@ function useForceLayout(
         const force = (dist - 120) * 0.01;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
-        pos[si].vx += fx;
-        pos[si].vy += fy;
-        pos[ti].vx -= fx;
-        pos[ti].vy -= fy;
+        pos[si].vx += fx; pos[si].vy += fy;
+        pos[ti].vx -= fx; pos[ti].vy -= fy;
       }
-
-      // Center gravity
       for (const p of pos) {
         p.vx += (cx - p.x) * 0.005;
         p.vy += (cy - p.y) * 0.005;
-        p.vx *= 0.85;
-        p.vy *= 0.85;
-        p.x += p.vx;
-        p.y += p.vy;
+        p.vx *= 0.85; p.vy *= 0.85;
+        p.x += p.vx; p.y += p.vy;
       }
-
       iterations++;
       setPositions([...pos]);
-
-      if (iterations < 120) {
-        frameRef.current = requestAnimationFrame(tick);
-      }
+      if (iterations < 120) frameRef.current = requestAnimationFrame(tick);
     }
-
     frameRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameRef.current);
   }, [nodes, edges, width, height]);
-
   return positions;
 }
+
+// ─── Main Component ───
 
 export default function GraphExplorer() {
   const projectName = useProjectName();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FunctionResult[]>([]);
-  const [graphData, setGraphData] = useState<GraphData>({
-    nodes: [],
-    edges: [],
-  });
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Neighborhood mode state
-  const [neighborhoodCenter, setNeighborhoodCenter] = useState<string | null>(
-    null,
-  );
+  // Neighborhood mode
+  const [neighborhoodCenter, setNeighborhoodCenter] = useState<string | null>(null);
   const [neighborhoodDepth, setNeighborhoodDepth] = useState(1);
-  const [neighborhoodNodeIds, setNeighborhoodNodeIds] = useState<Set<string>>(
-    new Set(),
-  );
+  const [neighborhoodNodeIds, setNeighborhoodNodeIds] = useState<Set<string>>(new Set());
   const [neighborhoodMode, setNeighborhoodMode] = useState(false);
-
-  // Node depth mapping for concentric layout
   const [nodeDepths, setNodeDepths] = useState<Record<string, number>>({});
 
-  // Intelligence sidebar
-  const [sidebarVisible, setSidebarVisible] = useState(false);
+  // Navigation history (breadcrumbs)
+  const [history, setHistory] = useState<{ id: string; label: string }[]>([]);
+
+  // Intelligence sidebar — open by default when graph is empty
+  const [sidebarVisible, setSidebarVisible] = useState(true);
+
+  // Suggested starting points for empty state
+  const [suggestions, setSuggestions] = useState<{
+    hotspots: InsightItem[];
+    fanout: InsightItem[];
+  }>({ hotspots: [], fanout: [] });
+
+  // Fetch suggestions on mount
+  useEffect(() => {
+    if (projectName === "default") return;
+    Promise.all([
+      apiClient.getHotspots(projectName, 3).catch(() => []),
+      apiClient.getHighFanout(projectName, 3).catch(() => []),
+    ]).then(([hotspots, fanout]) => {
+      setSuggestions({ hotspots, fanout });
+    });
+  }, [projectName]);
 
   const WIDTH = 800;
   const HEIGHT = 500;
-  const forcePositions = useForceLayout(
-    graphData.nodes,
-    graphData.edges,
-    WIDTH,
-    HEIGHT,
-  );
+  const forcePositions = useForceLayout(graphData.nodes, graphData.edges, WIDTH, HEIGHT);
   const concentricPositions = useConcentricLayout(
-    graphData.nodes,
-    graphData.edges,
-    WIDTH,
-    HEIGHT,
-    nodeDepths,
-    neighborhoodCenter,
+    graphData.nodes, graphData.edges, WIDTH, HEIGHT, nodeDepths, neighborhoodCenter,
   );
   const positions = neighborhoodMode ? concentricPositions : forcePositions;
 
-  // Compute distinct depth levels for drawing ring guides
   const ringDepths = useMemo(() => {
     if (!neighborhoodMode) return [];
     const depths = new Set<number>();
-    for (const d of Object.values(nodeDepths)) {
-      if (d > 0) depths.add(d);
-    }
+    for (const d of Object.values(nodeDepths)) { if (d > 0) depths.add(d); }
     return Array.from(depths).sort((a, b) => a - b);
   }, [neighborhoodMode, nodeDepths]);
+
+  const isEmpty = graphData.nodes.length === 0;
+
+  // ─── Actions ───
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
@@ -227,6 +204,7 @@ export default function GraphExplorer() {
     try {
       const results = await apiClient.searchFunctions(searchQuery.trim());
       setSearchResults(results);
+      setShowSearchResults(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
@@ -235,21 +213,28 @@ export default function GraphExplorer() {
   }, [searchQuery]);
 
   const loadNeighbors = useCallback(
-    async (functionId: string) => {
+    async (functionId: string, label?: string) => {
       setLoading(true);
       setError(null);
+      setShowSearchResults(false);
       try {
-        const data = await apiClient.getFunctionNeighbors(
-          functionId,
-          neighborhoodDepth,
-        );
+        const data = await apiClient.getFunctionNeighbors(functionId, neighborhoodDepth);
         setGraphData(data);
         const center = data.nodes.find((n) => n.id === functionId);
         setSelectedNode(center ?? null);
-
-        // Track neighborhood
-        setNeighborhoodCenter(functionId);
+        // Don't auto-enter neighborhood mode — just show force layout
+        setNeighborhoodCenter(null);
+        setNeighborhoodMode(false);
         setNeighborhoodNodeIds(new Set(data.nodes.map((n) => n.id)));
+        setNodeDepths({});
+        // Collapse sidebar when graph loads
+        setSidebarVisible(false);
+        // Add to history
+        const nodeLabel = label ?? center?.label ?? functionId;
+        setHistory((prev) => {
+          const filtered = prev.filter((h) => h.id !== functionId);
+          return [...filtered, { id: functionId, label: nodeLabel }].slice(-8);
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load graph");
       } finally {
@@ -273,9 +258,7 @@ export default function GraphExplorer() {
         setNodeDepths(data.nodeDepths ?? {});
         setNeighborhoodMode(true);
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load neighborhood",
-        );
+        setError(err instanceof Error ? err.message : "Failed to load neighborhood");
       } finally {
         setLoading(false);
       }
@@ -286,12 +269,22 @@ export default function GraphExplorer() {
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
       setSelectedNode(node);
-      if (!neighborhoodMode) {
+      if (neighborhoodMode) {
+        // In neighborhood mode, clicking any node (including dimmed) re-centers
+        loadNeighborhood(node.id, neighborhoodDepth);
+        setHistory((prev) => {
+          const filtered = prev.filter((h) => h.id !== node.id);
+          return [...filtered, { id: node.id, label: node.label }].slice(-8);
+        });
+      } else {
         if (node.type === "function") {
-          loadNeighbors(node.id);
+          loadNeighbors(node.id, node.label);
         } else if (node.type === "file") {
-          // For file nodes, load neighborhood to show import graph
           loadNeighborhood(node.id, neighborhoodDepth);
+          setHistory((prev) => {
+            const filtered = prev.filter((h) => h.id !== node.id);
+            return [...filtered, { id: node.id, label: node.label }].slice(-8);
+          });
         }
       }
     },
@@ -299,26 +292,18 @@ export default function GraphExplorer() {
   );
 
   const handleInsightClick = useCallback(
-    (item: InsightItem) => {
-      // Load the insight item into the graph
-      loadNeighbors(item.id);
-    },
+    (item: InsightItem) => { loadNeighbors(item.id, item.name); },
     [loadNeighbors],
   );
 
   const handleShowNeighborhood = useCallback(() => {
-    if (selectedNode) {
-      loadNeighborhood(selectedNode.id, neighborhoodDepth);
-    }
+    if (selectedNode) loadNeighborhood(selectedNode.id, neighborhoodDepth);
   }, [selectedNode, neighborhoodDepth, loadNeighborhood]);
 
-  // Re-fetch neighborhood when depth changes while in neighborhood mode
   const handleDepthChange = useCallback(
     (d: number) => {
       setNeighborhoodDepth(d);
-      if (neighborhoodMode && neighborhoodCenter) {
-        loadNeighborhood(neighborhoodCenter, d);
-      }
+      if (neighborhoodMode && neighborhoodCenter) loadNeighborhood(neighborhoodCenter, d);
     },
     [neighborhoodMode, neighborhoodCenter, loadNeighborhood],
   );
@@ -330,13 +315,33 @@ export default function GraphExplorer() {
     setNodeDepths({});
   }, []);
 
+  const handleClearGraph = useCallback(() => {
+    setGraphData({ nodes: [], edges: [] });
+    setSelectedNode(null);
+    setNeighborhoodMode(false);
+    setNeighborhoodCenter(null);
+    setNeighborhoodNodeIds(new Set());
+    setNodeDepths({});
+    setHistory([]);
+    setSidebarVisible(true);
+  }, []);
+
+  const handleBreadcrumbClick = useCallback(
+    (id: string) => {
+      if (neighborhoodMode) {
+        loadNeighborhood(id, neighborhoodDepth);
+      } else {
+        loadNeighbors(id);
+      }
+    },
+    [loadNeighbors, loadNeighborhood, neighborhoodMode, neighborhoodDepth],
+  );
+
+  // ─── Helpers ───
+
   function getNodeFill(node: GraphNode): string {
-    // In neighborhood mode, use category colors for function nodes
     if (node.type === "function" && node.category) {
-      return (
-        CATEGORY_COLORS[node.category as FunctionCategory] ??
-        (NODE_TYPE_COLORS[node.type] ?? "#6b7280")
-      );
+      return CATEGORY_COLORS[node.category as FunctionCategory] ?? (NODE_TYPE_COLORS[node.type] ?? "#6b7280");
     }
     return NODE_TYPE_COLORS[node.type] ?? "#6b7280";
   }
@@ -345,10 +350,13 @@ export default function GraphExplorer() {
     if (!neighborhoodMode) return 1;
     if (node.id === neighborhoodCenter) return 1;
     if (neighborhoodNodeIds.has(node.id)) return 1;
-    return 0.15;
+    return 0.3; // Was 0.15 — now higher so dimmed nodes look clickable
   }
 
   const posById = new Map(positions.map((p) => [p.node.id, p]));
+  const centerNodeLabel = neighborhoodCenter
+    ? graphData.nodes.find((n) => n.id === neighborhoodCenter)?.label ?? ""
+    : "";
 
   return (
     <div className="graph-explorer">
@@ -362,216 +370,275 @@ export default function GraphExplorer() {
         />
 
         <div className="graph-explorer__main">
+          {/* Controls bar */}
           <div className="graph-explorer__controls">
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search functions..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            />
+            <div style={{ position: "relative", flex: 1 }}>
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search functions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                onFocus={() => { if (searchResults.length > 0) setShowSearchResults(true); }}
+              />
+              {/* Search results dropdown — always visible when results exist */}
+              {showSearchResults && searchResults.length > 0 && (
+                <div className="search-results" style={{
+                  position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10,
+                  maxHeight: "300px", overflowY: "auto",
+                  backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "0 0 6px 6px",
+                }}>
+                  <div style={{ padding: "0.25rem 0.5rem", color: "#94a3b8", fontSize: "0.8em", borderBottom: "1px solid #334155" }}>
+                    {searchResults.length} result{searchResults.length !== 1 ? "s" : ""} found
+                  </div>
+                  {searchResults.map((fn) => (
+                    <button
+                      key={fn.id}
+                      className="search-result-item"
+                      onClick={() => { loadNeighbors(fn.id, fn.name); setShowSearchResults(false); }}
+                    >
+                      <strong>{fn.name}</strong>
+                      <span className="badge">{fn.category}</span>
+                      <span className="text-muted">{fn.filePath}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button className="btn" onClick={handleSearch} disabled={loading}>
-              Search
+              {loading ? "..." : "Search"}
             </button>
 
-            {/* Depth control */}
-            <div className="graph-explorer__depth-control">
-              <label>Depth:</label>
-              {[1, 2, 3].map((d) => (
-                <button
-                  key={d}
-                  className={`graph-explorer__depth-control button ${neighborhoodDepth === d ? "active" : ""}`}
-                  onClick={() => handleDepthChange(d)}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
+            {/* Depth control — only active in neighborhood mode */}
+            {neighborhoodMode && (
+              <div className="graph-explorer__depth-control">
+                <label>Depth:</label>
+                {[1, 2, 3].map((d) => (
+                  <button
+                    key={d}
+                    className={`graph-explorer__depth-control button ${neighborhoodDepth === d ? "active" : ""}`}
+                    onClick={() => handleDepthChange(d)}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Neighborhood actions */}
-            {selectedNode && (selectedNode.type === "function" || selectedNode.type === "file") && (
-              <button
-                className="graph-explorer__neighborhood-btn"
-                onClick={handleShowNeighborhood}
-                title="Show neighborhood with dimming for context"
-              >
+            {selectedNode && !neighborhoodMode && (selectedNode.type === "function" || selectedNode.type === "file") && (
+              <button className="graph-explorer__neighborhood-btn" onClick={handleShowNeighborhood}>
                 Show Neighborhood
               </button>
             )}
-            {neighborhoodMode && (
-              <button
-                className="btn btn--sm"
-                onClick={handleExitNeighborhood}
-              >
-                Exit Neighborhood
+            {!isEmpty && (
+              <button className="btn btn--sm" onClick={handleClearGraph} title="Clear graph and start over">
+                Clear
               </button>
             )}
           </div>
 
-          {error && <div className="error-message">{error}</div>}
+          {/* Neighborhood mode indicator */}
+          {neighborhoodMode && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: "0.75rem",
+              padding: "0.4rem 0.75rem", backgroundColor: "rgba(250, 204, 21, 0.1)",
+              border: "1px solid rgba(250, 204, 21, 0.3)", borderRadius: "6px", margin: "0 0 0.5rem 0",
+              fontSize: "0.85em",
+            }}>
+              <span style={{ color: "#facc15", fontWeight: 600 }}>Neighborhood View</span>
+              <span style={{ color: "#94a3b8" }}>{centerNodeLabel}</span>
+              <span style={{ color: "#64748b" }}>
+                Ring 1 = direct connections, Ring 2 = 2 hops, Ring 3 = 3 hops
+              </span>
+              <button className="btn btn--sm" onClick={handleExitNeighborhood} style={{ marginLeft: "auto" }}>
+                Exit Neighborhood
+              </button>
+            </div>
+          )}
 
-          {searchResults.length > 0 && graphData.nodes.length === 0 && (
-            <div className="search-results">
-              {searchResults.map((fn) => (
-                <button
-                  key={fn.id}
-                  className="search-result-item"
-                  onClick={() => loadNeighbors(fn.id)}
-                >
-                  <strong>{fn.name}</strong>
-                  <span className="badge">{fn.category}</span>
-                  <span className="text-muted">{fn.filePath}</span>
-                </button>
+          {/* Breadcrumb history */}
+          {history.length > 0 && !isEmpty && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: "0.25rem",
+              padding: "0.25rem 0", fontSize: "0.8em", color: "#64748b",
+              flexWrap: "wrap",
+            }}>
+              {history.map((h, i) => (
+                <span key={h.id}>
+                  {i > 0 && <span style={{ margin: "0 0.15rem" }}> &rsaquo; </span>}
+                  <button
+                    onClick={() => handleBreadcrumbClick(h.id)}
+                    style={{
+                      background: "none", border: "none", cursor: "pointer", padding: "0.15rem 0.3rem",
+                      color: i === history.length - 1 ? "#e2e8f0" : "#64748b",
+                      fontWeight: i === history.length - 1 ? 600 : 400,
+                      textDecoration: i === history.length - 1 ? "none" : "underline",
+                      borderRadius: "3px", fontSize: "inherit",
+                    }}
+                  >
+                    {h.label}
+                  </button>
+                </span>
               ))}
             </div>
           )}
 
-          <div className="graph-explorer__canvas">
-            <svg width={WIDTH} height={HEIGHT} className="graph-svg">
-              {/* Concentric ring guides */}
-              {neighborhoodMode && ringDepths.map((d) => (
-                <circle
-                  key={`ring-${d}`}
-                  cx={WIDTH / 2}
-                  cy={HEIGHT / 2}
-                  r={d * 150}
-                  className="graph-explorer__ring"
-                />
-              ))}
+          {error && <div className="error-message">{error}</div>}
 
-              {/* Edges */}
-              {graphData.edges.map((edge) => {
-                const s = posById.get(edge.source);
-                const t = posById.get(edge.target);
-                if (!s || !t) return null;
-                const edgeOpacity =
-                  neighborhoodMode
-                    ? neighborhoodNodeIds.has(edge.source) &&
-                      neighborhoodNodeIds.has(edge.target)
-                      ? 1
-                      : 0.1
-                    : 1;
-                return (
-                  <line
-                    key={edge.id}
-                    x1={s.x}
-                    y1={s.y}
-                    x2={t.x}
-                    y2={t.y}
-                    className="graph-edge"
-                    style={{ opacity: edgeOpacity }}
-                    markerEnd="url(#arrowhead)"
-                  />
-                );
-              })}
+          {/* ─── EMPTY STATE: Guided onboarding ─── */}
+          {isEmpty && !loading && (
+            <div className="graph-explorer__empty-state" style={{
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              minHeight: "400px", textAlign: "center", padding: "2rem",
+            }}>
+              <h2 style={{ color: "#e2e8f0", margin: "0 0 0.5rem 0", fontSize: "1.5rem" }}>
+                Explore your codebase as a graph
+              </h2>
+              <p style={{ color: "#94a3b8", margin: "0 0 1.5rem 0", maxWidth: "500px", lineHeight: 1.5 }}>
+                Search for a function to see its dependencies, or pick a suggested starting point below.
+              </p>
 
-              {/* Arrow marker */}
-              <defs>
-                <marker
-                  id="arrowhead"
-                  markerWidth="8"
-                  markerHeight="6"
-                  refX="20"
-                  refY="3"
-                  orient="auto"
-                >
-                  <polygon points="0 0, 8 3, 0 6" fill="#94a3b8" />
-                </marker>
-              </defs>
-
-              {/* Nodes */}
-              {positions.map((p) => {
-                const isCenter =
-                  neighborhoodMode && p.node.id === neighborhoodCenter;
-                const isDimmed =
-                  neighborhoodMode && !neighborhoodNodeIds.has(p.node.id);
-                const opacity = getNodeOpacity(p.node);
-                const nodeClass = [
-                  "graph-node",
-                  isCenter ? "graph-explorer__node--center" : "",
-                  isDimmed ? "graph-explorer__node--dimmed" : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ");
-                return (
-                  <g
-                    key={p.node.id}
-                    transform={`translate(${p.x},${p.y})`}
-                    onClick={() => handleNodeClick(p.node)}
-                    className={nodeClass}
-                    style={{ opacity }}
-                  >
-                    {/* Center node glow */}
-                    {isCenter && (
-                      <circle
-                        r={22}
-                        fill="none"
-                        stroke={getNodeFill(p.node)}
-                        strokeWidth={3}
-                        className="graph-explorer__node--center-glow"
-                      />
-                    )}
-                    <circle
-                      r={
-                        isCenter
-                          ? 16
-                          : selectedNode?.id === p.node.id
-                            ? 14
-                            : p.node.type === "file"
-                              ? 12
-                              : 10
-                      }
-                      fill={getNodeFill(p.node)}
-                      stroke={
-                        isCenter
-                          ? "#facc15"
-                          : selectedNode?.id === p.node.id
-                            ? "#fff"
-                            : "none"
-                      }
-                      strokeWidth={isCenter ? 3 : 2}
-                    />
-                    <title>{p.node.label}</title>
-                    <text
-                      y={-16}
-                      textAnchor="middle"
-                      className="graph-node__label"
+              {/* Suggested starting points */}
+              {(suggestions.hotspots.length > 0 || suggestions.fanout.length > 0) && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "center", marginBottom: "1.5rem" }}>
+                  {suggestions.hotspots.map((item) => (
+                    <button
+                      key={`h-${item.id}`}
+                      onClick={() => handleInsightClick(item)}
+                      style={{
+                        background: "rgba(34, 197, 94, 0.1)", border: "1px solid rgba(34, 197, 94, 0.3)",
+                        borderRadius: "8px", padding: "0.75rem 1rem", cursor: "pointer",
+                        textAlign: "left", minWidth: "180px", maxWidth: "220px",
+                      }}
                     >
-                      {p.node.type === "file"
-                        ? p.node.label.split("/").pop() ?? p.node.label
-                        : p.node.label}
+                      <div style={{ fontSize: "0.7em", color: "#22c55e", fontWeight: 600, marginBottom: "0.25rem" }}>
+                        HOTSPOT FILE
+                      </div>
+                      <div style={{ color: "#e2e8f0", fontWeight: 500, fontSize: "0.9em", wordBreak: "break-all" }}>
+                        {(item.path ?? item.name).split("/").pop()}
+                      </div>
+                      <div style={{ color: "#64748b", fontSize: "0.75em" }}>{item.count} imports</div>
+                    </button>
+                  ))}
+                  {suggestions.fanout.map((item) => (
+                    <button
+                      key={`f-${item.id}`}
+                      onClick={() => handleInsightClick(item)}
+                      style={{
+                        background: "rgba(59, 130, 246, 0.1)", border: "1px solid rgba(59, 130, 246, 0.3)",
+                        borderRadius: "8px", padding: "0.75rem 1rem", cursor: "pointer",
+                        textAlign: "left", minWidth: "180px", maxWidth: "220px",
+                      }}
+                    >
+                      <div style={{ fontSize: "0.7em", color: "#3b82f6", fontWeight: 600, marginBottom: "0.25rem" }}>
+                        HIGH FAN-OUT
+                      </div>
+                      <div style={{ color: "#e2e8f0", fontWeight: 500, fontSize: "0.9em" }}>{item.name}</div>
+                      <div style={{ color: "#64748b", fontSize: "0.75em" }}>{item.count} outgoing calls</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <p style={{ color: "#475569", fontSize: "0.85em", margin: 0 }}>
+                Tip: Click <strong style={{ color: "#94a3b8" }}>Insights</strong> on the left for code metrics like hotspots, cycles, and dead code.
+              </p>
+            </div>
+          )}
+
+          {/* ─── GRAPH CANVAS ─── */}
+          {!isEmpty && (
+            <div className="graph-explorer__canvas">
+              <svg width={WIDTH} height={HEIGHT} className="graph-svg">
+                {/* Concentric ring guides with depth labels */}
+                {neighborhoodMode && ringDepths.map((d) => (
+                  <g key={`ring-${d}`}>
+                    <circle cx={WIDTH / 2} cy={HEIGHT / 2} r={d * 150} className="graph-explorer__ring" />
+                    <text x={WIDTH / 2 + d * 150 + 5} y={HEIGHT / 2 - 5}
+                      style={{ fill: "#475569", fontSize: "0.65em" }}>
+                      {d === 1 ? "direct" : `${d} hops`}
                     </text>
                   </g>
-                );
-              })}
-            </svg>
+                ))}
 
-            {/* Legend */}
-            <div className="graph-legend">
-              {Object.entries(NODE_TYPE_COLORS).map(([type, color]) => (
-                <span key={type} className="graph-legend__item">
-                  <span
-                    className="graph-legend__dot"
-                    style={{ backgroundColor: color }}
-                  />
-                  {type}
+                {/* Edges */}
+                {graphData.edges.map((edge) => {
+                  const s = posById.get(edge.source);
+                  const t = posById.get(edge.target);
+                  if (!s || !t) return null;
+                  const edgeOpacity = neighborhoodMode
+                    ? (neighborhoodNodeIds.has(edge.source) && neighborhoodNodeIds.has(edge.target) ? 1 : 0.15)
+                    : 1;
+                  return (
+                    <line key={edge.id} x1={s.x} y1={s.y} x2={t.x} y2={t.y}
+                      className="graph-edge" style={{ opacity: edgeOpacity }}
+                      markerEnd="url(#arrowhead)" />
+                  );
+                })}
+
+                <defs>
+                  <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="20" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#94a3b8" />
+                  </marker>
+                </defs>
+
+                {/* Nodes */}
+                {positions.map((p) => {
+                  const isCenter = neighborhoodMode && p.node.id === neighborhoodCenter;
+                  const opacity = getNodeOpacity(p.node);
+                  const nodeClass = [
+                    "graph-node",
+                    isCenter ? "graph-explorer__node--center" : "",
+                  ].filter(Boolean).join(" ");
+                  return (
+                    <g key={p.node.id} transform={`translate(${p.x},${p.y})`}
+                      onClick={() => handleNodeClick(p.node)}
+                      className={nodeClass} style={{ opacity, cursor: "pointer" }}>
+                      {isCenter && (
+                        <circle r={22} fill="none" stroke={getNodeFill(p.node)} strokeWidth={3}
+                          className="graph-explorer__node--center-glow" />
+                      )}
+                      <circle
+                        r={isCenter ? 16 : selectedNode?.id === p.node.id ? 14 : p.node.type === "file" ? 12 : 10}
+                        fill={getNodeFill(p.node)}
+                        stroke={isCenter ? "#facc15" : selectedNode?.id === p.node.id ? "#fff" : "none"}
+                        strokeWidth={isCenter ? 3 : 2}
+                      />
+                      <title>{p.node.label}</title>
+                      <text y={-16} textAnchor="middle" className="graph-node__label">
+                        {p.node.type === "file" ? p.node.label.split("/").pop() ?? p.node.label : p.node.label}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+
+              {/* Enhanced Legend */}
+              <div className="graph-legend" style={{ flexWrap: "wrap", gap: "0.5rem 1rem" }}>
+                <span style={{ color: "#64748b", fontSize: "0.75em", marginRight: "0.25rem" }}>
+                  Arrow: caller &rarr; callee
                 </span>
-              ))}
+                {Object.entries(CATEGORY_COLORS).map(([cat, color]) => (
+                  <span key={cat} className="graph-legend__item" title={CATEGORY_DESCRIPTIONS[cat] ?? ""}>
+                    <span className="graph-legend__dot" style={{ backgroundColor: color }} />
+                    <span style={{ fontSize: "0.8em" }}>{cat.replace("_", " ")}</span>
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
+          {/* Function detail card */}
           {selectedNode && (
             <div className="graph-explorer__detail">
               <FunctionCard
                 node={selectedNode}
                 fileId={
-                  graphData.edges
-                    .find(
-                      (e) =>
-                        e.source === selectedNode.id && e.type === "DEFINED_IN",
-                    )
-                    ?.target
+                  graphData.edges.find(
+                    (e) => e.source === selectedNode.id && e.type === "DEFINED_IN",
+                  )?.target
                 }
               />
             </div>

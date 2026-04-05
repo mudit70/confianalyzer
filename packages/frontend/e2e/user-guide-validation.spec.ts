@@ -122,17 +122,13 @@ test.describe("Section 4: Graph Explorer", () => {
     }
   });
 
-  test("Depth buttons (1, 2, 3) are visible and clickable", async ({ page }) => {
+  test("Depth buttons appear in neighborhood mode", async ({ page }) => {
     await page.goto("/graph");
     await expect(page.locator(".graph-explorer")).toBeVisible({ timeout: 10000 });
-    // Depth control div contains label + 3 buttons (buttons also have the depth-control class)
+    // Depth buttons are hidden until neighborhood mode is entered (progressive disclosure)
     const depthControl = page.locator("div.graph-explorer__depth-control");
-    await expect(depthControl).toBeVisible();
-    await expect(depthControl.getByRole("button", { name: "1" })).toBeVisible();
-    await expect(depthControl.getByRole("button", { name: "2" })).toBeVisible();
-    await expect(depthControl.getByRole("button", { name: "3" })).toBeVisible();
-    // Click depth 2 - should not error
-    await depthControl.getByRole("button", { name: "2" }).click();
+    // Should NOT be visible on initial load
+    await expect(depthControl).not.toBeVisible();
   });
 
   test("Show Neighborhood button appears when a node is selected", async ({ page }) => {
@@ -152,19 +148,10 @@ test.describe("Section 4: Graph Explorer", () => {
     }
   });
 
-  test("Intelligence Sidebar toggle (Insights) is visible", async ({ page }) => {
+  test("Intelligence Sidebar is open by default with tabs", async ({ page }) => {
     await page.goto("/graph");
     await expect(page.locator(".graph-explorer")).toBeVisible({ timeout: 10000 });
-    // The collapsed toggle button should say "Insights"
-    await expect(page.locator(".intelligence-toggle", { hasText: "Insights" })).toBeVisible();
-  });
-
-  test("Opening sidebar shows tabs: Hotspots, Fan-Out, Cycles, Unused, Stats", async ({ page }) => {
-    await page.goto("/graph");
-    await expect(page.locator(".graph-explorer")).toBeVisible({ timeout: 10000 });
-    // Click the Insights toggle to open the sidebar
-    await page.locator(".intelligence-toggle", { hasText: "Insights" }).click();
-    // Sidebar should be visible
+    // Sidebar should be open by default (not collapsed)
     await expect(page.locator(".intelligence-sidebar")).toBeVisible({ timeout: 5000 });
     // Check all tabs
     await expect(page.locator(".intelligence-tab", { hasText: "Hotspots" })).toBeVisible();

@@ -112,35 +112,54 @@ The Dashboard is the home page. It shows a high-level overview of your project.
 
 The Graph Explorer is the primary tool for visually exploring code relationships. Navigate to it via **Graph Explorer** in the sidebar.
 
+### Getting Started
+
+When you first open the Graph Explorer, you'll see a **guided landing page** with:
+
+- A heading: "Explore your codebase as a graph"
+- **Suggested starting points** — cards showing hotspot files and high fan-out functions from your project. Click any card to immediately load it into the graph.
+- The **Intelligence Sidebar** is open on the left showing code metrics (hotspots, fan-out, cycles, dead code)
+
+This gives you multiple ways to start exploring without needing to know function names in advance.
+
 ### Searching for Functions
 
 1. Type a function name in the **search bar** at the top
 2. Press **Enter** or click **Search**
-3. Matching functions appear as a list with name, category badge, and file path
+3. A dropdown appears showing matching results with name, category badge, file path, and result count
 4. Click a result to load it into the graph
+5. The search dropdown stays accessible — click the search input again to see previous results, or type a new query to search again
 
 ### Reading the Graph
 
 - **Nodes** represent functions, files, endpoints, or DB tables
-- **Edges** show relationships (CALLS, DEFINED_IN, IMPORTS, etc.)
-- Nodes are color-coded by type and category
+- **Edges** show call relationships — arrows point from **caller to callee**
+- Nodes are color-coded by category (see legend at bottom)
 - Clicking a node selects it and loads its direct neighbors
+- A **breadcrumb trail** above the graph tracks your exploration path — click any previous node to go back
 
 ### Neighborhood Mode
 
 To see the broader context around a function or file:
 
 1. Select a node by clicking it
-2. Use the **Depth** buttons (1, 2, 3) to control how many hops to include
-3. Click **Show Neighborhood**
-4. The graph switches to a concentric rings layout:
-   - The selected node appears at the center
-   - Direct connections form the inner ring
-   - Indirect connections form outer rings
-   - Nodes outside the neighborhood are dimmed
-5. Click **Exit Neighborhood** to return to the normal layout
+2. Click **Show Neighborhood**
+3. The graph switches to a concentric rings layout:
+   - The selected node appears at the center with a golden glow
+   - "Direct" connections form the inner ring
+   - "2 hops" and "3 hops" connections form outer rings (labeled)
+   - A yellow **Neighborhood View** banner shows the current center node and explains the ring meanings
+4. Use the **Depth** buttons (1, 2, 3) that appear in neighborhood mode to control how many hops to include
+5. **Click any node** — including dimmed ones — to re-center the neighborhood on that node. This lets you navigate through the graph without exiting.
+6. Click **Exit Neighborhood** to return to the normal layout
 
-**File neighborhoods**: Clicking a File node automatically loads its import neighborhood, showing which files import it and which files it imports.
+**File neighborhoods**: Clicking a File node loads its import neighborhood, showing which files import it and which files it imports.
+
+### Navigation
+
+- **Breadcrumbs** — a trail of nodes you've visited appears above the graph. Click any previous node to jump back.
+- **Clear** — click the Clear button to reset the graph and return to the guided landing page.
+- **Back** — use breadcrumbs to retrace your steps at any time.
 
 ### Function Details
 
@@ -154,7 +173,7 @@ When you click a function node, the **Function Card** appears showing:
 
 ### Intelligence Sidebar
 
-Click **Insights** on the left to open the Intelligence Sidebar with five tabs:
+The Intelligence Sidebar opens by default on the left with five tabs:
 
 - **Hotspots** — files with the most inbound imports (high fan-in)
 - **Fan-Out** — functions that call the most other functions
@@ -162,7 +181,7 @@ Click **Insights** on the left to open the Intelligence Sidebar with five tabs:
 - **Unused** — functions with zero callers (potential dead code). Excludes API endpoints and UI entry points. Note: dynamic dispatch may hide callers.
 - **Stats** — total function, file, endpoint, and DB table counts
 
-Click any item in the sidebar to load it into the graph.
+Click any item in the sidebar to load it into the graph. The sidebar collapses automatically when a graph loads to give more canvas space — click **Insights** to reopen it.
 
 ---
 
