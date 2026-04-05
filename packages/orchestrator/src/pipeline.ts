@@ -97,10 +97,11 @@ export async function buildResultFromIr(
   projectName: string,
   options: PipelineOptions,
 ): Promise<PipelineResult> {
-  // Build nodes from IR
+  // Build nodes from IR — normalize project name to lowercase for consistency
+  const normalizedProjectName = projectName.trim().toLowerCase();
   const project: ProjectNode = {
     id: crypto.randomUUID(),
-    name: projectName,
+    name: normalizedProjectName,
     createdAt: new Date().toISOString(),
   };
 

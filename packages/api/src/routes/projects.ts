@@ -55,10 +55,11 @@ router.get("/:name", async (req: Request, res: Response, next: NextFunction) => 
  */
 router.post("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name } = req.body;
-    if (!name) {
+    const { name: rawName } = req.body;
+    if (!rawName) {
       throw new ApiError(400, "Project name is required");
     }
+    const name = rawName.trim().toLowerCase();
 
     // Check if project already exists
     const existing = await runQuery(
