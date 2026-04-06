@@ -9,6 +9,9 @@ import BlastRadius from "./components/BlastRadius";
 import RepoGraph from "./components/RepoGraph";
 import DbImpact from "./components/DbImpact";
 import ProjectWizard from "./components/ProjectWizard";
+import ApiCallerList from "./components/ApiCallerList";
+import HandlerList from "./components/HandlerList";
+import UiInteractionList from "./components/UiInteractionList";
 
 export default function App() {
   return (
@@ -23,6 +26,9 @@ export default function App() {
         <Route path="blast-radius" element={<BlastRadius />} />
         <Route path="repo-graph" element={<RepoGraph />} />
         <Route path="db-impact" element={<DbImpact />} />
+        <Route path="api-callers" element={<ApiCallerList />} />
+        <Route path="handlers" element={<HandlerList />} />
+        <Route path="ui-interactions" element={<UiInteractionList />} />
       </Route>
     </Routes>
   );

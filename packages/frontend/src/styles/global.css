@@ -75,6 +75,8 @@ code {
   flex-direction: column;
   padding: 8px;
   gap: 2px;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .nav-link {

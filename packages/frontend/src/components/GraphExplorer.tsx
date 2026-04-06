@@ -11,6 +11,7 @@ import { NODE_TYPE_COLORS, CATEGORY_COLORS, type FunctionCategory } from "../typ
 import FunctionCard from "./FunctionCard";
 import IntelligenceSidebar from "./IntelligenceSidebar";
 import { useProjectName } from "../hooks/useProjectName";
+import { useSearchParams } from "react-router-dom";
 
 interface NodePosition {
   x: number;
@@ -168,6 +169,7 @@ function useForceLayout(
 
 export default function GraphExplorer() {
   const projectName = useProjectName();
+  const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FunctionResult[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
@@ -259,6 +261,16 @@ export default function GraphExplorer() {
   }, [neighborhoodMode, nodeDepths]);
 
   const isEmpty = graphData.nodes.length === 0;
+
+  // Auto-load function from URL query param (e.g., /graph?fn=<id>)
+  const autoLoadedRef = useRef(false);
+  useEffect(() => {
+    const fnId = searchParams.get("fn");
+    if (fnId && !autoLoadedRef.current && isEmpty) {
+      autoLoadedRef.current = true;
+      loadNeighborhood(fnId, neighborhoodDepth);
+    }
+  }, [searchParams, isEmpty, loadNeighborhood, neighborhoodDepth]);
 
   // ─── Actions ───
 

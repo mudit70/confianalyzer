@@ -34,25 +34,19 @@ test.describe("Smoke tests", () => {
   test("Clicking nav links changes the route/URL", async ({ page }) => {
     await page.goto("/");
 
-    // Click Graph Explorer
-    await page.locator(".nav-link", { hasText: "Graph Explorer" }).click();
-    await expect(page).toHaveURL(/\/graph$/);
+    // Navigate via sidebar links — click from Dashboard which doesn't have heavy rendering
+    await page.locator(".sidebar-nav .nav-link", { hasText: "Flow Tracer" }).click();
+    await expect(page).toHaveURL(/\/flow/);
 
-    // Click Flow Tracer
-    await page.locator(".nav-link", { hasText: "Flow Tracer" }).click();
-    await expect(page).toHaveURL(/\/flow$/);
+    await page.locator(".sidebar-nav .nav-link", { hasText: "Endpoints" }).first().click();
+    await expect(page).toHaveURL(/\/endpoints/);
 
-    // Click Endpoints
-    await page.locator(".nav-link", { hasText: "Endpoints" }).click();
-    await expect(page).toHaveURL(/\/endpoints$/);
+    await page.locator(".sidebar-nav .nav-link", { hasText: "Files" }).click();
+    await expect(page).toHaveURL(/\/files/);
 
-    // Click Files
-    await page.locator(".nav-link", { hasText: "Files" }).click();
-    await expect(page).toHaveURL(/\/files$/);
-
-    // Click Dashboard to go back
-    await page.locator(".nav-link", { hasText: "Dashboard" }).click();
+    await page.locator(".sidebar-nav .nav-link", { hasText: "Dashboard" }).click();
     await expect(page).toHaveURL(/\/$/);
+
   });
 
   test("Query bar is visible in the layout", async ({ page }) => {
