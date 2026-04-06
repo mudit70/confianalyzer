@@ -65,19 +65,16 @@ export default function FlowTracer() {
     // Merge all paths into a single deduplicated graph
     const nodeMap = new Map<string, GraphNode>();
     const edgeMap = new Map<string, GraphEdge>();
-    const fileMaps: Record<string, string> = {};
+    const topLevelFileMap = entryToExitTrace.fileMap ?? {};
     for (const path of entryToExitTrace.paths) {
       for (const node of path.nodes) {
         if (!nodeMap.has(node.id)) {
-          // Enrich node metadata with fileMap info
+          // Enrich node metadata with fileMap info (fileMap is at top level)
           const enriched = { ...node, metadata: { ...node.metadata } };
-          if (path.fileMap[node.id]) {
-            enriched.metadata.filePath = path.fileMap[node.id];
+          if (topLevelFileMap[node.id]) {
+            enriched.metadata.filePath = topLevelFileMap[node.id];
           }
           nodeMap.set(node.id, enriched);
-          if (path.fileMap[node.id]) {
-            fileMaps[node.id] = path.fileMap[node.id];
-          }
         }
       }
       for (const edge of path.edges) edgeMap.set(edge.id, edge);

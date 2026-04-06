@@ -218,8 +218,8 @@ export interface EntryToExitTrace {
   paths: {
     nodes: GraphNode[];
     edges: GraphEdge[];
-    fileMap: Record<string, string>;
   }[];
+  fileMap: Record<string, string>;
 }
 
 export interface CategoryFunctionsResult {
